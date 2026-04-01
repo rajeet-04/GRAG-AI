@@ -6,7 +6,7 @@ Uses LLM to extract structured entities from unstructured text.
 
 import json
 import uuid
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import structlog
 
@@ -56,9 +56,9 @@ class EntityExtractionService:
     def __init__(self) -> None:
         """Initialize the entity extraction service."""
         self.ollama_client = OllamaClient()
-        self._in_memory_store: dict[str, dict[str, Any]] = {}
+        self._in_memory_store: Dict[str, Dict[str, Any]] = {}
 
-    async def extract_entities(self, text: str) -> list[dict[str, Any]]:
+    async def extract_entities(self, text: str) -> List[Dict[str, Any]]:
         """
         Extract entities from the given text.
 
@@ -110,7 +110,7 @@ class EntityExtractionService:
             logger.error("entity_extraction.failed", error=str(e))
             return []
 
-    def _parse_json_response(self, content: str) -> list[dict[str, Any]]:
+    def _parse_json_response(self, content: str) -> List[Dict[str, Any]]:
         """
         Parse JSON from LLM response, handling various formats.
 
@@ -158,17 +158,17 @@ class EntityExtractionService:
         logger.warning("entity_extraction.parse_failed", content=content[:200])
         return []
 
-    def store_result(self, document_id: str, result: dict[str, Any]) -> None:
+    def store_result(self, document_id: str, result: Dict[str, Any]) -> None:
         """Store extraction result in memory for retrieval."""
         self._in_memory_store[document_id] = result
 
-    def get_result(self, document_id: str) -> dict[str, Any] | None:
+    def get_result(self, document_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve stored extraction result by document ID."""
         return self._in_memory_store.get(document_id)
 
 
 # Singleton instance
-_entity_extraction_service: EntityExtractionService | None = None
+_entity_extraction_service: Optional[EntityExtractionService] = None
 
 
 def get_entity_extraction_service() -> EntityExtractionService:
