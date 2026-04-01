@@ -1,0 +1,36 @@
+# GRAG AI Dependencies
+
+# Core Framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+langgraph>=0.2.0
+python-dotenv>=1.0.0
+
+# Neo4j
+neo4j>=5.20.0
+neo4j-graphrag>=1.0.0
+
+# Vector Store
+chromadb>=0.5.0
+
+# HTTP Client
+httpx>=0.27.0
+
+# Data Validation
+pydantic>=2.6.0
+pydantic-settings>=2.0.0
+
+# Logging & Observability
+structlog>=24.0.0
+
+# Token Counting
+tiktoken>=0.7.0
+
+# Resilience
+tenacity>=8.2.0
+
+# Ollama SDK
+ollama>=0.2.0
+
+# Graphiti for temporal versioning
+graphiti-core>=0.2.0
