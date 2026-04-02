@@ -448,3 +448,42 @@ def create_agent_graph() -> Any:
     """
     graph = _build_graph()
     return graph.compile()
+
+
+def create_pipeline_graph() -> Any:
+    """Create a graph that stops BEFORE the explanation node.
+
+    Used by the streaming API path:
+    1. Run this graph to get merged_context + kr_paths (fast, ~1-3s)
+    2. Then stream the explanation directly from Ollama's streaming API
+       so tokens reach Open WebUI in real time.
+
+    Topology: START → ingestion → [graph_builder] → query_agent
+              → [kr_search | kb_search] → context_builder → END
+    """
+    graph = StateGraph(GraphState)
+
+    graph.add_node("ingestion", ingestion_agent_node)
+    graph.add_node("graph_builder", graph_builder_agent_node)
+    graph.add_node("query_agent", query_agent_node)
+    graph.add_node("kr_search", kr_search_node)
+    graph.add_node("kb_search", kb_search_node)
+    graph.add_node("context_builder", context_builder_node)
+
+    graph.add_edge(START, "ingestion")
+    graph.add_conditional_edges(
+        "ingestion",
+        _route_after_ingestion,
+        ["graph_builder", "query_agent"],
+    )
+    graph.add_edge("graph_builder", "query_agent")
+    graph.add_conditional_edges(
+        "query_agent",
+        _route_after_query,
+        ["kr_search", "kb_search", "context_builder"],
+    )
+    graph.add_edge("kr_search", "context_builder")
+    graph.add_edge("kb_search", "context_builder")
+    graph.add_edge("context_builder", END)
+
+    return graph.compile()

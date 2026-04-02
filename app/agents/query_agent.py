@@ -4,8 +4,7 @@ Extracts search intent from natural language queries, generates Cypher
 queries for Neo4j knowledge graph traversal, and applies temporal filters
 based on query time context.
 
-Uses local Ollama (qwen2.5:7b-q4_k_m) for fast intent extraction
-per CONTEXT.md Decision 4: Hybrid Local/Cloud pattern.
+Uses Ollama cloud for fast, scalable intent extraction.
 """
 
 import json
@@ -15,7 +14,7 @@ from typing import Any
 
 import structlog
 
-from app.llm.ollama_client import get_ollama_client
+from app.llm.ollama_client import OllamaClient
 
 logger = structlog.get_logger()
 
@@ -236,7 +235,7 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     logger.info("query_agent.starting", query=user_query[:200])
-    ollama = get_ollama_client()
+    ollama = OllamaClient(use_cloud=True)
 
     try:
         # Step 1: Extract intent using local Ollama

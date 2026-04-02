@@ -254,25 +254,30 @@ async def non_streaming_completion(
 async def stream_chat_completions(
     request: ChatCompletionRequest,
 ) -> AsyncGenerator[str, None]:
-    """Stream chat completion responses with status updates + token chunks.
+    """True streaming: runs pipeline → context, then streams explanation from Ollama.
 
-    Args:
-        request: Chat completion request
+    Flow:
+    1. Emit "[GRAG is processing...]" SSE chunk immediately  →  user sees activity
+    2. Run create_pipeline_graph() (all agents EXCEPT explanation)  →  ~1-3s
+    3. Pipe Ollama's streaming /api/chat response directly as SSE chunks  →  real-time tokens
+    4. Emit [DONE]
 
-    Yields:
-        SSE-formatted data chunks with completion deltas
+    This eliminates the fake word-splitting that destroyed markdown formatting.
+    Tokens flow: Ollama cloud → FastAPI SSE → Open WebUI render  in real time.
     """
+    from app.agents.explanation_agent import stream_explanation
+    from app.agents.graph import create_pipeline_graph
+
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
-    # Extract user message
+    # Extract last user message
     user_message = ""
     for msg in reversed(request.messages):
         if msg.role == "user":
             user_message = msg.content
             break
 
-    # Create session ID and initial state
     session_id = str(uuid.uuid4())
     initial_state = create_initial_state(user_query=user_message, session_id=session_id)
 
@@ -280,99 +285,56 @@ async def stream_chat_completions(
         "chat_completion.stream.start",
         model=request.model,
         session_id=session_id,
+        query_preview=user_message[:100],
     )
 
-    # Send initial status message
-    chunk = ChatCompletionChunk(
-        id=chunk_id,
-        created=created,
-        model=request.model,
-        choices=[
-            ChoiceChunk(
-                index=0,
-                delta=Delta(content="[GRAG is processing your request...]\n\n"),
-                finish_reason=None,
-            )
-        ],
-    )
-    yield f"data: {chunk.model_dump_json()}\n\n"
-
-    try:
-        # Invoke LangGraph pipeline
-        app = create_agent_graph()
-        config = {"configurable": {"thread_id": session_id}}
-
-        final_state: GraphState = await app.ainvoke(initial_state, config)
-
-        # Extract answer
-        answer = final_state.get("answer", "")
-        reasoning_steps = final_state.get("reasoning_steps", [])
-        mermaid_path = final_state.get("mermaid_path", "")
-
-        # Format full response
-        full_response = answer
-
-        if reasoning_steps:
-            full_response += "\n\n## Reasoning Steps\n"
-            for i, step in enumerate(reasoning_steps, 1):
-                full_response += f"\n{i}. {step}"
-
-        if mermaid_path:
-            full_response += (
-                f"\n\n## Graph Reasoning Path\n```mermaid\n{mermaid_path}\n```"
-            )
-
-        logger.info(
-            "chat_completion.stream.pipeline_complete",
-            session_id=session_id,
-            answer_length=len(answer),
-        )
-
-        # Stream content token by token (word-by-word)
-        words = full_response.split()
-        for i, word in enumerate(words):
-            chunk = ChatCompletionChunk(
-                id=chunk_id,
-                created=created,
-                model=request.model,
-                choices=[
-                    ChoiceChunk(
-                        index=0,
-                        delta=Delta(content=word + (" " if i < len(words) - 1 else "")),
-                        finish_reason=None,
-                    )
-                ],
-            )
-            yield f"data: {chunk.model_dump_json()}\n\n"
-
-    except Exception as e:
-        logger.error("stream.pipeline.error", error=str(e))
-        chunk = ChatCompletionChunk(
+    def _chunk(content: str, finish: str | None = None) -> str:
+        """Format an SSE data chunk in OpenAI streaming format."""
+        c = ChatCompletionChunk(
             id=chunk_id,
             created=created,
             model=request.model,
-            choices=[
-                ChoiceChunk(
-                    index=0,
-                    delta=Delta(content=f"\n[Error: {str(e)}]"),
-                    finish_reason=None,
-                )
-            ],
+            choices=[ChoiceChunk(index=0, delta=Delta(content=content), finish_reason=finish)],
         )
-        yield f"data: {chunk.model_dump_json()}\n\n"
+        return f"data: {c.model_dump_json()}\n\n"
 
-    # Send final chunk
-    chunk = ChatCompletionChunk(
+    # ── Step 1: Processing indicator ──────────────────────────────────────────
+    yield _chunk("[GRAG is processing your request...]\n\n")
+
+    try:
+        # ── Step 2: Run pipeline stages (query → search → context) ───────────
+        pipeline = create_pipeline_graph()
+        config = {"configurable": {"thread_id": session_id}}
+        pipeline_state = await pipeline.ainvoke(initial_state, config)
+
+        logger.info(
+            "chat_completion.stream.pipeline_ready",
+            session_id=session_id,
+            context_length=len(pipeline_state.get("merged_context", "")),
+            kr_paths=len(pipeline_state.get("kr_paths", [])),
+        )
+
+        # ── Step 3: Stream explanation tokens directly from Ollama ────────────
+        async for token in stream_explanation(pipeline_state):
+            yield _chunk(token)
+
+    except Exception as e:
+        logger.error("stream.pipeline.error", error=str(e), session_id=session_id)
+        yield _chunk(f"\n\n[Pipeline error: {str(e)[:200]}]")
+
+    # ── Step 4: Final stop chunk + DONE ───────────────────────────────────────
+    stop = ChatCompletionChunk(
         id=chunk_id,
         created=created,
         model=request.model,
         choices=[ChoiceChunk(index=0, delta=Delta(), finish_reason="stop")],
     )
-    yield f"data: {chunk.model_dump_json()}\n\n"
-
-    logger.info("chat_completion.stream.complete", chunk_id=chunk_id)
-
+    yield f"data: {stop.model_dump_json()}\n\n"
     yield "data: [DONE]\n\n"
+
+    logger.info("chat_completion.stream.complete", chunk_id=chunk_id, session_id=session_id)
+
+
 
 
 # Export router for inclusion in main.py

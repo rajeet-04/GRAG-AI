@@ -25,35 +25,40 @@ logger = structlog.get_logger()
 # Prompts
 # ---------------------------------------------------------------------------
 
-EXPLANATION_SYSTEM_PROMPT = """You are an explanation agent that generates human-readable \
-answers from graph traversal paths. Your output MUST follow this THREE-SECTION format:
+EXPLANATION_SYSTEM_PROMPT = """You are a knowledgeable assistant that answers user questions clearly and completely.
+Your output MUST follow this THREE-SECTION format:
 
 ## Section 1: Natural Language Answer
-Answer the user's question based on the retrieved context.
+Provide a full, complete answer to the user's question.
+- If the user asks for CODE, write complete, working, well-commented code in a properly fenced markdown code block (e.g. ```python ... ```).
+- If context is available, use it. If not, answer from your own knowledge.
+- Do NOT just describe what the code would do — actually write the code.
+- For factual questions, cite the retrieved context clearly.
 
 ## Section 2: Step-by-Step Reasoning Path
 Explain your reasoning as a chain: A → B → C → ...
-Show how each piece of evidence leads to the next.
+Each step should connect logically to the next.
 
 ## Section 3: Mermaid Diagram
-Generate a Mermaid.js graph showing the traversal path.
+Generate a Mermaid.js graph showing the key reasoning or data flow.
 Format:
 ```mermaid
 graph TD
-    A[User Query] --> B[Entity A]
-    B --> C[Relation Type]
-    C --> D[Entity B]
+    A[User Query] --> B[Key Step]
+    B --> C[Next Step]
+    C --> D[Answer]
 ```
 
-CRITICAL: 
+CRITICAL:
 - Output ONLY these three sections, nothing else
+- CODE questions MUST have a working code block in Section 1
 - Use valid Mermaid.js syntax
-- Reasoning must explicitly connect each step to the next with "→" arrows"""
+- Reasoning steps must use "→" arrows"""
 
 
 EXPLANATION_USER_PROMPT = """User Query: {query}
 
-Retrieved Context:
+Retrieved Context (from knowledge graph — may be empty for general questions):
 {context}
 
 Graph Paths:
@@ -61,6 +66,11 @@ Graph Paths:
 
 Confidence Scores:
 {confidence}
+
+Instructions:
+- If the query asks for code, provide a complete working code example in Section 1.
+- If Retrieved Context is available, use it to answer. If empty, answer from your own knowledge.
+- Always generate all three sections.
 
 Generate your response in the three-section format."""
 
@@ -202,13 +212,27 @@ def _annotate_reasoning_with_confidence(
     Matches each step index to the corresponding path's confidence score
     and appends the formatted percentage string.
 
+    If no paths have real confidence scores, returns steps unannotated
+    (avoids flooding output with "(Confidence: N/A)").
+
     Args:
         steps: Raw reasoning step strings from LLM
         paths: Original graph path dicts with confidence scores
 
     Returns:
-        Annotated reasoning steps with "(Confidence: XX%)" appended
+        Annotated reasoning steps, or plain steps if no scores available
     """
+    # Check whether any real confidence values exist
+    has_scores = any(
+        p.get("confidence") is not None
+        for p in paths
+        if isinstance(p, dict)
+    )
+
+    # No graph path data — return steps without N/A clutter
+    if not paths or not has_scores:
+        return steps
+
     annotated = []
     for i, step in enumerate(steps):
         conf = None
@@ -217,8 +241,11 @@ def _annotate_reasoning_with_confidence(
         elif i < len(paths) and isinstance(paths[i], (int, float)):
             conf = paths[i]
 
-        conf_str = format_confidence_percent(conf)
-        annotated.append(f"{step} {conf_str}")
+        if conf is not None:
+            conf_str = format_confidence_percent(conf)
+            annotated.append(f"{step} {conf_str}")
+        else:
+            annotated.append(step)
 
     return annotated
 
@@ -299,6 +326,77 @@ def validate_mermaid(mermaid: str) -> bool:
         return False
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# Streaming helpers (used by openai.py for true SSE streaming)
+# ---------------------------------------------------------------------------
+
+
+def build_explanation_prompt(state: dict[str, Any]) -> tuple[str, str]:
+    """Build the system + user prompt from pipeline state.
+
+    Extracts context, paths and confidence from state and formats
+    them using EXPLANATION_SYSTEM_PROMPT / EXPLANATION_USER_PROMPT.
+
+    Returns:
+        (system_prompt, user_prompt) tuple ready for LLM submission
+    """
+    user_query = state.get("user_query", "")
+    context = state.get("merged_context", "")
+    paths = state.get("kr_paths", [])
+    confidence = state.get("confidence_scores", {})
+
+    selected_paths, _ = select_top_n_paths(paths)
+
+    user_msg = EXPLANATION_USER_PROMPT.format(
+        query=user_query,
+        context=context if context else "No context available.",
+        paths=_format_paths(selected_paths),
+        confidence=_format_confidence(confidence),
+    )
+    return EXPLANATION_SYSTEM_PROMPT, user_msg
+
+
+async def stream_explanation(state: dict[str, Any]):
+    """Async generator — streams explanation tokens from Ollama cloud.
+
+    This is the true streaming path used by openai.py when stream=True.
+    Tokens are yielded as they arrive from Ollama so Open WebUI renders
+    text in real-time rather than waiting for the entire response.
+
+    Strategy:
+    - Try cloud (minimax-m2.7:cloud) first
+    - Fall back to local (qwen3.5:9b) if cloud fails
+
+    Args:
+        state: Pipeline state after context_builder has run
+
+    Yields:
+        str — text delta chunks
+    """
+    from app.llm.ollama_client import OllamaClient
+
+    system_prompt, user_msg = build_explanation_prompt(state)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_msg},
+    ]
+
+    try:
+        client = OllamaClient(use_cloud=True)
+        async for chunk in client.chat_stream(messages=messages, temperature=0.3, max_tokens=4096):
+            yield chunk
+    except Exception as cloud_err:
+        logger.warning("stream_explanation.cloud_failed", error=str(cloud_err))
+        # Fall back to local
+        try:
+            local_client = OllamaClient(use_cloud=False)
+            async for chunk in local_client.chat_stream(messages=messages, temperature=0.3, max_tokens=2048):
+                yield chunk
+        except Exception as local_err:
+            logger.error("stream_explanation.local_failed", error=str(local_err))
+            yield "\n\n[Error generating response. Please try again.]"
 
 
 # ---------------------------------------------------------------------------

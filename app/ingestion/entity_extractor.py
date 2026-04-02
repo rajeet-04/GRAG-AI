@@ -54,8 +54,8 @@ class EntityExtractionService:
     """
 
     def __init__(self) -> None:
-        """Initialize the entity extraction service."""
-        self.ollama_client = OllamaClient()
+        """Initialize the entity extraction service using Ollama cloud."""
+        self.ollama_client = OllamaClient(use_cloud=True)
         self._in_memory_store: Dict[str, Dict[str, Any]] = {}
 
     async def extract_entities(self, text: str) -> List[Dict[str, Any]]:

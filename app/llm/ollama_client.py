@@ -189,6 +189,79 @@ class OllamaClient:
             logger.error("ollama.chat.error", model=self.model, error=str(e))
             raise
 
+    async def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        think: bool = False,
+    ):
+        """Stream chat completion from Ollama — yields text chunks as they arrive.
+
+        Uses Ollama's native streaming API (stream=true in /api/chat).
+        Each line of the NDJSON response is decoded and the content delta
+        is yielded immediately so callers can pipe tokens to the client.
+
+        Per OLLAMA.md: thinking-capable models emit a `thinking` field
+        alongside content. When think=False, only `content` deltas are yielded.
+
+        Args:
+            messages:    Conversation messages
+            temperature: Sampling temperature
+            max_tokens:  Max tokens (num_predict)
+            think:       Emit thinking traces (False = content-only)
+
+        Yields:
+            str: Text delta chunks from the model
+        """
+        import json as _json
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+            "think": think,
+            "stream": True,
+        }
+
+        client = await self._get_client()
+
+        logger.info(
+            "ollama.chat_stream.start",
+            model=self.model,
+            use_cloud=self.use_cloud,
+            message_count=len(messages),
+        )
+
+        try:
+            async with client.stream("POST", "/api/chat", json=payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        data = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+
+                    message = data.get("message", {})
+                    # Skip thinking trace tokens when think=False
+                    if message.get("thinking"):
+                        continue
+                    delta = message.get("content", "")
+                    if delta:
+                        yield delta
+
+                    if data.get("done"):
+                        break
+
+        except Exception as e:
+            logger.error("ollama.chat_stream.error", model=self.model, error=str(e))
+            raise
+
     async def generate(
         self,
         prompt: str,

@@ -69,8 +69,8 @@ class RelationExtractionService:
     """
 
     def __init__(self) -> None:
-        """Initialize the relationship extraction service."""
-        self.ollama_client = OllamaClient()
+        """Initialize the relationship extraction service using Ollama cloud."""
+        self.ollama_client = OllamaClient(use_cloud=True)
 
     async def extract_relations(
         self,
