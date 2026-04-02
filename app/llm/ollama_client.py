@@ -25,12 +25,21 @@ class OllamaClient:
         self,
         base_url: str | None = None,
         model: str | None = None,
+        api_key: str | None = None,
     ) -> None:
         """Initialize Ollama client with settings."""
         self.settings = get_settings()
         self.base_url = base_url or self.settings.ollama_base_url
         self.model = model or self.settings.ollama_model
+        self.api_key = api_key or self.settings.ollama_api_key
         self._client: httpx.AsyncClient | None = None
+
+    def _get_headers(self) -> dict[str, str]:
+        """Get headers for Ollama API requests."""
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create async HTTP client."""
@@ -38,6 +47,7 @@ class OllamaClient:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=120.0,
+                headers=self._get_headers(),
             )
         return self._client
 

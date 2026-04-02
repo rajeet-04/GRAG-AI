@@ -29,8 +29,16 @@ class EmbeddingService:
         self.settings = get_settings()
         self.base_url = base_url or self.settings.ollama_base_url
         self.model = model or self.settings.embedding_model or self.DEFAULT_MODEL
+        self.api_key = self.settings.ollama_api_key
         self._client: httpx.AsyncClient | None = None
         self._dimension: int | None = None
+
+    def _get_headers(self) -> dict[str, str]:
+        """Get headers for Ollama API requests."""
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create async HTTP client."""
@@ -38,6 +46,7 @@ class EmbeddingService:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=60.0,
+                headers=self._get_headers(),
             )
         return self._client
 

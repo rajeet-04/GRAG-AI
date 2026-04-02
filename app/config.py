@@ -28,6 +28,7 @@ class Settings(BaseSettings):
         default="http://localhost:11434", alias="OLLAMA_BASE_URL"
     )
     ollama_model: str = Field(default="qwen2.5:7b-q4_k_m", alias="OLLAMA_MODEL")
+    ollama_api_key: Optional[str] = Field(default=None, alias="OLLAMA_API_KEY")
 
     # Embedding Model
     embedding_model: str = Field(default="nomic-embed-text", alias="EMBEDDING_MODEL")
