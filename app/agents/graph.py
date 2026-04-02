@@ -2,13 +2,17 @@
 
 Agent Graph Topology:
   1. Ingestion Agent (optional — for document ingestion)
-  2. Query Agent → extracts intent + generates Cypher
-  3. Parallel KR (Neo4j) + KB (ChromaDB) search
-  4. Context Builder → merges with token budget enforcement
-  5. Explanation Agent → generates xAI output with Mermaid
+  2. Graph Builder Agent (optional — writes ingested data to Neo4j)
+  3. Query Agent → extracts intent + generates Cypher
+  4. Parallel KR (Neo4j) + KB (ChromaDB) search
+  5. Context Builder → merges with token budget enforcement
+  6. Explanation Agent → generates xAI output with Mermaid
 
-Flow:
-  START → Ingestion → Query Agent → [KR Search | KB Search] → Context Builder → Explanation → END
+Flow (document ingestion):
+  START → Ingestion → Graph Builder → Query Agent → [KR Search | KB Search] → Context Builder → Explanation → END
+
+Flow (query mode):
+  START → Ingestion (skip) → Query Agent → [KR Search | KB Search] → Context Builder → Explanation → END
 """
 
 from __future__ import annotations
@@ -24,20 +28,20 @@ from app.agents.state import GraphState
 # Real agent node imports
 # ---------------------------------------------------------------------------
 
-from app.agents.query_agent import query_agent_node  # noqa: F401
+from app.agents.ingestion_agent import ingestion_agent_node  # noqa: F401
+from app.agents.graph_builder import graph_builder_agent_node  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Stub node functions — will be replaced by real agent implementations
 # ---------------------------------------------------------------------------
 
 
-def ingestion_agent_node(state: GraphState) -> dict[str, Any]:
-    """Ingestion Agent: processes documents into entities and relations.
+def query_agent_node(state: GraphState) -> dict[str, Any]:
+    """Query Agent: extracts search intent and generates Cypher query.
 
-    Stub — will be implemented in a later plan using EntityExtractionService
-    and RelationExtractionService from Phase 4.
+    Stub — will be implemented with local qwen3.5:9b for fast intent extraction.
     """
-    return {"agent_trace": ["ingestion_agent:stub"]}
+    return {"agent_trace": ["query_agent:stub"]}
 
 
 def kr_search_node(state: GraphState) -> dict[str, Any]:
@@ -86,6 +90,18 @@ def error_handler_node(state: GraphState) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _route_after_ingestion(state: GraphState) -> str:
+    """Route after Ingestion Agent.
+
+    If entities were extracted, proceed to Graph Builder to persist them.
+    Otherwise (query mode or empty ingestion), skip directly to Query Agent.
+    """
+    entities = state.get("entities", [])
+    if entities:
+        return "graph_builder"
+    return "query_agent"
+
+
 def _route_after_query(state: GraphState) -> list[str]:
     """Route after Query Agent: parallel KR + KB search, or skip to context.
 
@@ -108,7 +124,10 @@ def _route_after_query(state: GraphState) -> list[str]:
 def _build_graph() -> StateGraph:
     """Build the StateGraph with all agent nodes and edges.
 
-    Topology:
+    Topology (document ingestion mode):
+      START → ingestion → graph_builder → query_agent → [kr_search, kb_search] → context_builder → explanation → END
+
+    Topology (query mode — ingestion returns no entities):
       START → ingestion → query_agent → [kr_search, kb_search] → context_builder → explanation → END
 
     Error handling nodes are wired for future use.
@@ -117,6 +136,7 @@ def _build_graph() -> StateGraph:
 
     # ── Add nodes ──────────────────────────────────────────────
     graph.add_node("ingestion", ingestion_agent_node)
+    graph.add_node("graph_builder", graph_builder_agent_node)
     graph.add_node("query_agent", query_agent_node)
     graph.add_node("kr_search", kr_search_node)
     graph.add_node("kb_search", kb_search_node)
@@ -127,14 +147,22 @@ def _build_graph() -> StateGraph:
     # ── Entry edge ─────────────────────────────────────────────
     graph.add_edge(START, "ingestion")
 
-    # ── Ingestion → Query Agent ────────────────────────────────
-    graph.add_edge("ingestion", "query_agent")
+    # ── Ingestion → conditional routing ────────────────────────
+    # If ingestion produced entities → Graph Builder
+    # If no ingestion text (query mode) → skip to Query Agent
+    graph.add_conditional_edges(
+        "ingestion",
+        _route_after_ingestion,
+        ["graph_builder", "query_agent"],
+    )
+
+    # ── Graph Builder → Query Agent ────────────────────────────
+    graph.add_edge("graph_builder", "query_agent")
 
     # ── Query Agent → conditional fan-out ──────────────────────
     graph.add_conditional_edges(
         "query_agent",
         _route_after_query,
-        # Map returned node names to actual node IDs
         ["kr_search", "kb_search", "context_builder"],
     )
 
