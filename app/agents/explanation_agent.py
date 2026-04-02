@@ -213,6 +213,10 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     paths = state.get("kr_paths", [])
     confidence = state.get("confidence_scores", {})
 
+    # Extract context truncation state
+    context_truncated = state.get("context_truncated", False)
+    truncation_warning = state.get("truncation_warning")
+
     logger.info(
         "explanation_agent.start",
         query_length=len(user_query),
@@ -258,6 +262,18 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # Parse three-section response
     parsed = parse_three_section_response(raw_text)
+    answer = parsed["answer"]
+
+    # Add truncation disclaimer if applicable
+    if context_truncated:
+        disclaimer = "\n\n**Note:** This answer is based on incomplete context data as some information was truncated to fit the token budget. The reasoning below may not reflect all available knowledge."
+        answer = answer + disclaimer
+
+        logger.info(
+            "explanation_agent.truncation_disclaimer",
+            context_truncated=context_truncated,
+            warning=truncation_warning,
+        )
 
     logger.info(
         "explanation_agent.complete",
@@ -270,7 +286,7 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
 
     return {
         **state,
-        "answer": parsed["answer"],
+        "answer": answer,
         "reasoning_steps": parsed["reasoning_steps"],
         "mermaid_path": parsed["mermaid"],
         "confidence_scores": confidence,
