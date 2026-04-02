@@ -11,6 +11,8 @@ Uses cloud Ollama model (qwen2.5:14b-q4_k_m) for large context handling
 without OOM crashes on 8GB VRAM systems.
 """
 
+from __future__ import annotations
+
 import os
 import re
 from typing import Any
