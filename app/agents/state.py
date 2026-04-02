@@ -54,6 +54,8 @@ class GraphState(TypedDict):
     # ── Merged context ─────────────────────────────────────────
     merged_context: str
     token_count: int
+    context_truncated: bool  # True if any truncation occurred
+    truncation_warning: str | None  # Warning message when 80% threshold exceeded
 
     # ── Explanation output ─────────────────────────────────────
     answer: str
@@ -105,6 +107,8 @@ def create_initial_state(user_query: str, session_id: str) -> GraphState:
         # Merged context
         merged_context="",
         token_count=0,
+        context_truncated=False,
+        truncation_warning=None,
         # Explanation output
         answer="",
         reasoning_steps=[],

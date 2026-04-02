@@ -56,3 +56,30 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+class ContextConfig(BaseSettings):
+    """Token budget and truncation settings for context management.
+
+    Mirrors RetrievalConfig pattern from Phase 7 for consistency.
+    Supports .env override for future LLM upgrades.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    default_token_budget: int = Field(default=8192, alias="CONTEXT_TOKEN_BUDGET")
+    warning_threshold_pct: float = Field(
+        default=0.80, alias="CONTEXT_WARNING_THRESHOLD"
+    )
+    tiktoken_model: str = Field(default="cl100k_base", alias="CONTEXT_TIKTOKEN_MODEL")
+
+
+@lru_cache(maxsize=1)
+def get_context_config() -> ContextConfig:
+    """Get cached context config instance."""
+    return ContextConfig()
