@@ -10,6 +10,7 @@ Implements the 5-agent orchestration pattern:
 Exports core LangGraph types and graph factory for API layer use.
 """
 
+from app.agents.context_builder import context_builder_node, merge_with_budget
 from app.agents.explanation_agent import explanation_agent_node
 from app.agents.graph import create_agent_graph
 from app.agents.ingestion_agent import create_ingestion_state, ingestion_agent_node
@@ -26,4 +27,6 @@ __all__ = [
     "ingestion_agent_node",
     "create_ingestion_state",
     "explanation_agent_node",
+    "context_builder_node",
+    "merge_with_budget",
 ]
