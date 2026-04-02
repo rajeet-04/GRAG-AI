@@ -18,6 +18,8 @@ from typing import Any
 import structlog
 import tiktoken
 
+from app.retrieval.ranker import RankingConfig, rank_retrieval_results
+
 logger = structlog.get_logger()
 
 # Token budget constants (per CONTEXT.md Decision 7)
@@ -344,8 +346,15 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     LangGraph node function for the Context Builder Agent.
 
-    Reads KR and KB retrieval results from state, merges them with
-    strict priority-based token budget enforcement.
+    Reads KR and KB retrieval results from state, ranks them with
+    confidence-weighted late fusion, then merges with strict
+    priority-based token budget enforcement.
+
+    Per CONTEXT.md Decision 4:
+    - Normalize graph confidence and vector similarity to 0-1 scale
+    - Graph gets 0.6 weight, vector gets 0.4 weight
+    - Deduplicate by Entity ID, rank by unified confidence score
+    - Clean arrays for downstream processing
 
     Per CONTEXT.md Decision 7:
     - KR facts: highest priority, NEVER truncated
@@ -360,15 +369,59 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
                episodic_memories, semantic_preferences
 
     Returns:
-        Updated state dict with merged_context, token_count, and agent trace
+        Updated state dict with ranked_entities, ranked_relations,
+        merged_context, token_count, and agent trace
     """
     kr_entities = state.get("kr_entities", [])
     kr_relations = state.get("kr_relations", [])
     episodic = state.get("episodic_memories", [])
     semantic = state.get("semantic_preferences", [])
 
-    merged = merge_with_budget(
+    # Skip if no results to process
+    if not kr_entities and not episodic and not semantic:
+        existing_trace = state.get("agent_trace", [])
+        return {
+            **state,
+            "ranked_entities": [],
+            "ranked_relations": [],
+            "merged_context": "",
+            "token_count": 0,
+            "agent_trace": existing_trace + ["ContextBuilder: No results to merge"],
+        }
+
+    # ── Rank results with late fusion ────────────────────────────────
+    ranking_config = RankingConfig(
+        graph_weight=0.6,  # From CONTEXT.md Decision 4
+        vector_weight=0.4,
+        max_results=50,
+    )
+
+    ranked_entities, ranked_relations = rank_retrieval_results(
         kr_entities=kr_entities,
+        kr_relations=kr_relations,
+        episodic_memories=episodic,
+        semantic_preferences=semantic,
+        config=ranking_config,
+    )
+
+    # Convert ScoredResult dicts to plain dicts for merge_with_budget
+    # (which expects 'name' key for kr_entities format)
+    ranked_kr_entities = []
+    for entity in ranked_entities:
+        ranked_kr_entities.append(
+            {
+                "id": entity["entity_id"],
+                "name": entity.get("entity_name", ""),
+                "type": entity.get("entity_type", ""),
+                "confidence": entity["unified_score"],
+                "source": entity["source"],
+                "description": f"[{entity['source']}] score: {entity['unified_score']:.2f}",
+            }
+        )
+
+    # ── Merge with token budget ──────────────────────────────────────
+    merged = merge_with_budget(
+        kr_entities=ranked_kr_entities,
         kr_relations=kr_relations,
         episodic_memories=episodic,
         semantic_preferences=semantic,
@@ -377,7 +430,9 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
     existing_trace = state.get("agent_trace", [])
 
     trace_msg = (
-        f"ContextBuilder: merged KR+KB with token budget "
+        f"ContextBuilder: ranked {len(ranked_entities)} entities "
+        f"({len([e for e in ranked_entities if e['source'] == 'merged'])} merged), "
+        f"merged with token budget "
         f"({merged['token_count']}/{merged['budget']} tokens, "
         f"{merged['budget_pct']}%)"
     )
@@ -386,6 +441,8 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
 
     return {
         **state,
+        "ranked_entities": ranked_entities,
+        "ranked_relations": ranked_relations,
         "merged_context": merged["context"],
         "token_count": merged["token_count"],
         "agent_trace": existing_trace + [trace_msg],

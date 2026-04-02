@@ -47,6 +47,10 @@ class GraphState(TypedDict):
     episodic_memories: list[dict]
     semantic_preferences: list[dict]
 
+    # ── Ranked results (late fusion) ───────────────────────────
+    ranked_entities: list[dict]  # Deduplicated, scored entities
+    ranked_relations: list[dict]  # Relations with path info
+
     # ── Merged context ─────────────────────────────────────────
     merged_context: str
     token_count: int
@@ -95,6 +99,9 @@ def create_initial_state(user_query: str, session_id: str) -> GraphState:
         # KB retrieval results
         episodic_memories=[],
         semantic_preferences=[],
+        # Ranked results
+        ranked_entities=[],
+        ranked_relations=[],
         # Merged context
         merged_context="",
         token_count=0,
