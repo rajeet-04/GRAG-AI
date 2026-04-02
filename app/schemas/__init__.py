@@ -6,10 +6,16 @@ from app.schemas.retrieval import (
     RetrievalResult,
     TraversalResult,
 )
+from app.schemas.explanation import (
+    ExplanationResponse,
+    ReasoningStep,
+)
 
 __all__ = [
     "PathSegment",
     "RetrievalConfig",
     "RetrievalResult",
     "TraversalResult",
+    "ExplanationResponse",
+    "ReasoningStep",
 ]
