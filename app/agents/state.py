@@ -6,7 +6,8 @@ Defines the shared state that flows through the agent graph:
 All agent nodes read from and write to this state dict.
 """
 
-from typing import TypedDict
+import operator
+from typing import Annotated, TypedDict
 
 
 class GraphState(TypedDict):
@@ -25,6 +26,12 @@ class GraphState(TypedDict):
     # ── User input ──────────────────────────────────────────────
     user_query: str
     session_id: str
+    ingestion_text: str  # Optional: populated for document ingestion mode
+
+    # ── Ingestion Agent output ──────────────────────────────────
+    entities: Annotated[list[dict], operator.add]  # Extracted entities
+    relations: Annotated[list[dict], operator.add]  # Extracted relations
+    graph_write_result: dict  # Result from Graph Builder (Neo4j write)
 
     # ── Query Agent output ──────────────────────────────────────
     search_intent: str
@@ -51,11 +58,11 @@ class GraphState(TypedDict):
     confidence_scores: dict
 
     # ── Error handling ─────────────────────────────────────────
-    errors: list[dict]
+    errors: Annotated[list[dict], operator.add]
     retry_count: int
 
     # ── Metadata ───────────────────────────────────────────────
-    agent_trace: list[str]
+    agent_trace: Annotated[list[str], operator.add]
 
 
 def create_initial_state(user_query: str, session_id: str) -> GraphState:
@@ -72,6 +79,11 @@ def create_initial_state(user_query: str, session_id: str) -> GraphState:
         # User input
         user_query=user_query,
         session_id=session_id,
+        ingestion_text="",
+        # Ingestion Agent output
+        entities=[],
+        relations=[],
+        graph_write_result={},
         # Query Agent output
         search_intent="",
         temporal_filters={},
