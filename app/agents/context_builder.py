@@ -18,13 +18,10 @@ from typing import Any
 import structlog
 import tiktoken
 
+from app.config import ContextConfig
 from app.retrieval.ranker import RankingConfig, rank_retrieval_results
 
 logger = structlog.get_logger()
-
-# Token budget constants (per CONTEXT.md Decision 7)
-DEFAULT_TOKEN_BUDGET = 8192
-WARNING_THRESHOLD = 6553  # 80% of 8192
 
 
 class PriorityLevel:
@@ -35,7 +32,7 @@ class PriorityLevel:
     SEMANTIC_PREFERENCES = 3  # Lowest priority
 
 
-def _get_encoding(model: str = "gpt-4") -> tiktoken.Encoding:
+def _get_encoding(model: str | None = None) -> tiktoken.Encoding:
     """
     Get tiktoken encoding for a model.
 
@@ -43,11 +40,16 @@ def _get_encoding(model: str = "gpt-4") -> tiktoken.Encoding:
     Falls back to cl100k_base if model is unknown.
 
     Args:
-        model: Model name (e.g., "gpt-4", "gpt-3.5-turbo")
+        model: Model name (e.g., "gpt-4", "gpt-3.5-turbo").
+               If None, uses ContextConfig.tiktoken_model
 
     Returns:
         tiktoken.Encoding instance
     """
+    if model is None:
+        config = ContextConfig()
+        model = config.tiktoken_model
+
     try:
         return tiktoken.encoding_for_model(model)
     except KeyError:
@@ -198,7 +200,7 @@ def merge_with_budget(
     kr_relations: list[dict[str, Any]],
     episodic_memories: list[dict[str, Any]],
     semantic_preferences: list[dict[str, Any]],
-    budget: int = DEFAULT_TOKEN_BUDGET,
+    budget: int | None = None,
 ) -> dict[str, Any]:
     """
     Merge context by priority, truncating lowest priority first.
@@ -212,12 +214,17 @@ def merge_with_budget(
     then episodic memories (oldest first). KR facts are always included
     in full, even if they alone exceed the budget (with a warning).
 
+    Per CONTEXT.md Decision 1:
+    - Uses ContextConfig for budget and warning threshold
+    - Logs truncation events at INFO/WARNING/CRITICAL levels
+    - Returns context_truncated flag and truncation_warning message
+
     Args:
         kr_entities: KR entity results from Neo4j
         kr_relations: KR relation results from Neo4j
         episodic_memories: KB episodic memory results from ChromaDB
         semantic_preferences: KB semantic preference results from ChromaDB
-        budget: Maximum token budget (default: 8192)
+        budget: Optional token budget override (uses ContextConfig default)
 
     Returns:
         dict with keys:
@@ -226,18 +233,39 @@ def merge_with_budget(
             - truncated: List of sections that were truncated
             - budget: Token budget used
             - budget_pct: Percentage of budget used
+            - context_truncated: True if any truncation occurred
+            - truncation_warning: Warning message if 80% threshold exceeded
     """
+    # Use config defaults if no override
+    config = ContextConfig()
+    if budget is None:
+        budget = config.default_token_budget
+    warning_threshold = int(budget * config.warning_threshold_pct)
+
+    logger.info(
+        "context_builder.merge.start",
+        token_count=0,
+        budget=budget,
+        kr_entities=len(kr_entities),
+        kr_relations=len(kr_relations),
+        episodic_memories=len(episodic_memories),
+        semantic_preferences=len(semantic_preferences),
+    )
+
     truncated: list[str] = []
+    warning_msg: str | None = None
 
     # Step 1: Format KR section (NEVER truncated)
     kr_section = _format_kr_section(kr_entities, kr_relations)
     kr_tokens = count_tokens(kr_section)
 
     if kr_tokens >= budget:
-        logger.warning(
+        # CRITICAL: KR alone exceeds budget (emergency case per Decision 3)
+        logger.critical(
             "context_builder.kr_exceeds_budget",
             kr_tokens=kr_tokens,
             budget=budget,
+            kr_truncated=True,
         )
 
     remaining_budget = max(0, budget - kr_tokens)
@@ -312,17 +340,24 @@ def merge_with_budget(
     total_tokens = count_tokens(merged)
     budget_pct = (total_tokens / budget * 100) if budget > 0 else 0
 
-    # Log warning if near budget limit
-    if total_tokens > WARNING_THRESHOLD:
+    # Per CONTEXT.md Decision 2: Inject warning at 80% threshold
+    if total_tokens > warning_threshold:
+        warning_msg = f"⚠️ Warning: Context approaching budget limit ({budget_pct:.0f}%). Some older memories may be excluded."
         logger.warning(
             "context_builder.budget_warning",
             token_count=total_tokens,
             budget=budget,
             budget_pct=f"{budget_pct:.1f}%",
+            at_risk=[
+                "episodic_memories"
+                if "episodic_memories" not in truncated
+                else "semantic_preferences"
+            ],
         )
 
+    # Log INFO for normal merge completion
     logger.info(
-        "context_builder.merged",
+        "context_builder.merge.complete",
         token_count=total_tokens,
         budget=budget,
         budget_pct=f"{budget_pct:.1f}%",
@@ -331,6 +366,7 @@ def merge_with_budget(
         episodic_count=len(episodic_memories),
         semantic_count=len(semantic_preferences),
         truncated=truncated,
+        truncated_items=truncated,
     )
 
     return {
@@ -339,6 +375,8 @@ def merge_with_budget(
         "truncated": truncated,
         "budget": budget,
         "budget_pct": round(budget_pct, 1),
+        "context_truncated": len(truncated) > 0,
+        "truncation_warning": warning_msg,
     }
 
 
@@ -386,6 +424,8 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
             "ranked_relations": [],
             "merged_context": "",
             "token_count": 0,
+            "context_truncated": False,
+            "truncation_warning": None,
             "agent_trace": existing_trace + ["ContextBuilder: No results to merge"],
         }
 
@@ -429,15 +469,11 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
 
     existing_trace = state.get("agent_trace", [])
 
-    trace_msg = (
-        f"ContextBuilder: ranked {len(ranked_entities)} entities "
-        f"({len([e for e in ranked_entities if e['source'] == 'merged'])} merged), "
-        f"merged with token budget "
-        f"({merged['token_count']}/{merged['budget']} tokens, "
-        f"{merged['budget_pct']}%)"
-    )
+    trace_msg_extended = trace_msg
     if merged["truncated"]:
-        trace_msg += f" — truncated: {', '.join(merged['truncated'])}"
+        trace_msg_extended += f" — truncated: {', '.join(merged['truncated'])}"
+    if merged.get("truncation_warning"):
+        trace_msg_extended += f" | warning: {merged['truncation_warning']}"
 
     return {
         **state,
@@ -445,5 +481,7 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
         "ranked_relations": ranked_relations,
         "merged_context": merged["context"],
         "token_count": merged["token_count"],
-        "agent_trace": existing_trace + [trace_msg],
+        "context_truncated": merged.get("context_truncated", False),
+        "truncation_warning": merged.get("truncation_warning"),
+        "agent_trace": existing_trace + [trace_msg_extended],
     }
