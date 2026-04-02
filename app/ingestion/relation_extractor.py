@@ -5,7 +5,7 @@ Extracts typed relationships between entities from text.
 """
 
 import json
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import structlog
 
@@ -75,8 +75,8 @@ class RelationExtractionService:
     async def extract_relations(
         self,
         text: str,
-        entities: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
+        entities: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
         """
         Extract relationships between entities from text.
 
@@ -159,7 +159,7 @@ Text: {text}
             logger.error("relation_extraction.failed", error=str(e))
             return []
 
-    def _parse_json_response(self, content: str) -> list[dict[str, Any]]:
+    def _parse_json_response(self, content: str) -> List[Dict[str, Any]]:
         """
         Parse JSON from LLM response, handling various formats.
 

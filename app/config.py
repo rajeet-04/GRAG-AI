@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from functools import lru_cache
+from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,8 +40,8 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", alias="ENVIRONMENT")
 
     # Optional: Cloud LLM for Context Builder Agent
-    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
-    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
+    anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
         return f"bolt://{self.neo4j_user}:{self.neo4j_password}@{self.neo4j_uri.replace('bolt://', '')}"
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
