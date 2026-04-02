@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     environment: str = Field(default="development", alias="ENVIRONMENT")
 
+    # OpenAI API Configuration (for OpenWebUI integration)
+    api_key: str = Field(default="", alias="API_KEY")
+    model_name: str = Field(default="grag-pipeline-v1", alias="MODEL_NAME")
+
+    # Server Configuration
+    host: str = Field(default="0.0.0.0", alias="HOST")
+    port: int = Field(default=8000, alias="PORT")
+
     # Optional: Cloud LLM for Context Builder Agent
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
