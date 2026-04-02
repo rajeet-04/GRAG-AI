@@ -13,8 +13,16 @@ Exports core LangGraph types and graph factory for API layer use.
 from app.agents.context_builder import context_builder_node, merge_with_budget
 from app.agents.explanation_agent import explanation_agent_node
 from app.agents.graph import create_agent_graph
+from app.agents.graph_builder import graph_builder_agent_node
 from app.agents.ingestion_agent import create_ingestion_state, ingestion_agent_node
+from app.agents.query_agent import query_agent_node
 from app.agents.state import GraphState, create_initial_state, get_trace
+from app.agents.tools import (
+    AGENT_TOOLS,
+    chroma_episodic_search,
+    chroma_semantic_search,
+    neo4j_search,
+)
 
 __all__ = [
     # State types and helpers
@@ -26,7 +34,14 @@ __all__ = [
     # Agent nodes
     "ingestion_agent_node",
     "create_ingestion_state",
-    "explanation_agent_node",
+    "query_agent_node",
     "context_builder_node",
     "merge_with_budget",
+    "explanation_agent_node",
+    "graph_builder_agent_node",
+    # Tools
+    "AGENT_TOOLS",
+    "neo4j_search",
+    "chroma_episodic_search",
+    "chroma_semantic_search",
 ]
