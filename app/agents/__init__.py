@@ -1,18 +1,28 @@
-"""
-LangGraph agent nodes for GRAG AI.
+"""GRAG AI agent orchestration module.
 
 Implements the 5-agent orchestration pattern:
 1. Ingestion Agent — text → entities + relations
-2. Graph Builder Agent — write to Neo4j with temporal versioning
-3. Query Agent — natural language → Cypher
-4. Context Builder Agent — merge KR + KB context
-5. Explanation Agent — xAI reasoning output
+2. Query Agent — natural language → Cypher
+3. KR/KB Search — parallel Neo4j + ChromaDB retrieval
+4. Context Builder — merge KR + KB context with token budget
+5. Explanation Agent — xAI reasoning output with Mermaid
+
+Exports core LangGraph types and graph factory for API layer use.
 """
 
-from app.agents.ingestion_agent import create_ingestion_state, ingestion_agent_node
 from app.agents.explanation_agent import explanation_agent_node
+from app.agents.graph import create_agent_graph
+from app.agents.ingestion_agent import create_ingestion_state, ingestion_agent_node
+from app.agents.state import GraphState, create_initial_state, get_trace
 
 __all__ = [
+    # State types and helpers
+    "GraphState",
+    "create_initial_state",
+    "get_trace",
+    # Graph factory
+    "create_agent_graph",
+    # Agent nodes
     "ingestion_agent_node",
     "create_ingestion_state",
     "explanation_agent_node",
