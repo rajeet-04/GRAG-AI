@@ -99,7 +99,7 @@ async def list_models():
     }
 
 
-@router.post("/chat/completions")
+@router.post("/chat/completions", response_model=None)
 async def chat_completions(
     request: ChatCompletionRequest,
     _auth: bool = Depends(verify_api_key),

@@ -18,11 +18,9 @@ from app.api.openai import router as openai_router
 settings = get_settings()
 logger = structlog.get_logger()
 
-# Configure structlog
+# Configure structlog - use print logger factory
 structlog.configure(
     processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
