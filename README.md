@@ -1,134 +1,191 @@
-# GRAG AI — Hybrid Graph RAG System
+# GRAG AI - Hybrid Graph RAG System
 
 ## Overview
 
-GRAG AI is an experimental hybrid retrieval-augmented generation backend designed around a dual-memory architecture:
-- Knowledge Representation (KR) in Neo4j (temporal graph, factual knowledge)
-- Knowledge Base (KB) in ChromaDB (episodic + semantic user memory)
-- Explainable AI (xAI) with traceable reasoning paths (graph traversal + Mermaid-friendly output)
+GRAG AI is a production-ready hybrid retrieval-augmented generation backend with a dual-memory architecture:
+- **Knowledge Representation (KR)**: Neo4j temporal graph for factual knowledge
+- **Knowledge Base (KB)**: ChromaDB for episodic + semantic user memory
+- **Explainable AI (xAI)**: Traceable reasoning paths with Mermaid visualization
 
-It is built to integrate with OpenWebUI via an OpenAI-compatible HTTP API and uses Ollama for local LLM inference.
+Integrates with OpenWebUI via OpenAI-compatible API and uses Ollama for local LLM inference.
 
 ## Key Features
 
-- FastAPI server with health checks and ingestion + review APIs
-- Neo4j graph schema with temporal versioning and Graphiti support
-- Ingestion pipeline: entity extraction, relationship extraction, document provenance
-- Entity resolution with manual review queue and merge decision workflow
-- Multi-agent architecture (planned): Ingestion, Graph Builder, Query, Context Builder, Explanation
-- Retrieval engine (planned): graph-first multi-hop traversal with vector fallback
-- Context window management via tiktoken token counting
-- Strong separation of objective facts (KR) and subjective sessions (KB)
+- ✅ Dual-memory architecture (KR/KB strict firewall)
+- ✅ Temporal versioning in Neo4j (valid_from/valid_to)
+- ✅ 5-agent LangGraph orchestration (Ingestion, Query, Context Builder, Explanation)
+- ✅ Multi-hop graph traversal (2-4 hops) with vector fallback
+- ✅ Context window management with tiktoken (8192 token budget)
+- ✅ Explainable AI with reasoning paths + Mermaid diagrams
+- ✅ OpenAI-compatible API (`/v1/chat/completions`)
+- ✅ Streaming support (SSE)
 
 ## Architecture
 
-- `app/main.py`: FastAPI entrypoint, lifespan startup/shutdown, endpoints
-- `app/config.py`: Pydantic settings (Neo4j, Ollama, ChromaDB, environment)
-- `app/api/ingestion.py`: `/api/v1/ingest` endpoints
-- `app/api/review_queue.py`: `/api/v1/review-queue` endpoints
-- `app/ingestion`: entity/relation extraction + graph writer services
-- `app/database`: Neo4j client and ChromaDB embedded client
-- `app/memory`: short-term, episodic, semantic memory modules
-- `app/retrieval`: fallback and ranking logic
+```
+app/
+├── main.py              # FastAPI entrypoint
+├── config.py           # Pydantic settings
+├── api/
+│   ├── ingestion.py    # Document ingestion endpoints
+│   ├── openai.py       # OpenAI-compatible API
+│   └── review_queue.py # Manual review endpoints
+├── agents/
+│   ├── graph.py        # LangGraph orchestration
+│   ├── query_agent.py  # NL → Cypher
+│   ├── context_builder.py # KR + KB merging
+│   └── explanation_agent.py # xAI output
+├── database/
+│   ├── neo4j_client.py # Neo4j operations
+│   └── chroma_client.py # ChromaDB vector store
+├── memory/             # KB: short-term, episodic, semantic
+├── retrieval/          # Fallback + ranking
+└── schemas/            # Pydantic models
+```
 
-## Requirements
+## Quick Start
 
-### System
+### Prerequisites
+
 - Python 3.12+
-- Neo4j 5.20+ with heap limited to 2GB (`neo4j/neo4j.conf`)
-- Ollama local server (default: `http://localhost:11434`)
-- 8GB VRAM, 16GB RAM
+- Neo4j 5.20+ (with 2GB heap limit)
+- Ollama with models
+- 8GB VRAM, 16GB RAM recommended
 
-### Python dependencies
-- FastAPI
-- Uvicorn
-- LangGraph
-- pydantic, pydantic-settings
-- Neo4j + neo4j-graphrag
-- ChromaDB
-- Ollama
-- tiktoken, tenacity
-- structlog, httpx
+### 1. Clone and Setup
 
-## Getting Started
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/grag-ai.git
+cd grag-ai
 
-1. Create `.env` with:
+# Copy environment template
+cp env.example .env
+```
+
+### 2. Configure Environment
+
+Edit `.env` with your settings:
 
 ```env
+# Required: Neo4j
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=password
+NEO4J_PASSWORD=your_password
+
+# Required: Ollama
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:7b-q4_k_m
+
+# Required: ChromaDB
 CHROMADB_PATH=./data/chromadb
+
+# Optional: API Authentication (blank = no auth)
+API_KEY=
+
+# Optional: Server
+HOST=0.0.0.0
+PORT=8000
 LOG_LEVEL=INFO
 ENVIRONMENT=development
 ```
 
-2. Install dependencies:
+### 3. Run with Docker
 
 ```bash
-pip install -r requirements.txt
-# or
-pip install -e .
+# Build and run
+docker build -t grag-ai .
+docker run -p 8000:8000 --env-file .env grag-ai
 ```
 
-3. Start required services:
-- Start Neo4j (with `neo4j/neo4j.conf` 2GB heap)
-- Start Ollama server and ensure model is available
-
-4. Run server:
+### 4. Run Locally
 
 ```bash
+# Using uv (recommended)
+uv venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+uv sync
+
+# Or using pip
+pip install -r requirements.txt
+
+# Start the server
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-5. Validate:
-- `GET http://localhost:8000/health`
-- `GET http://localhost:8000/docs`
+## OpenWebUI Integration
 
-## API Endpoints
+### Configuration
 
-- `GET /` : service metadata
-- `GET /health` : health status for Neo4j, Ollama, ChromaDB sights
-- `POST /api/v1/ingest` : ingest a single document
-- `POST /api/v1/ingest/batch` : ingest multiple documents
-- `GET /api/v1/review-queue` : list pending manual review decisions
-- `GET /api/v1/review-queue/{decision_id}` : review detail
-- `POST /api/v1/review-queue/{decision_id}/approve` : approve merge
-- `POST /api/v1/review-queue/{decision_id}/reject` : reject merge
+1. **Start GRAG AI**:
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
 
-## Development Workflow
+2. **Configure OpenWebUI**:
+   - Go to Admin Panel → Settings → AI Settings → Advanced
+   - Add new API connection:
+     - **API Base URL**: `http://localhost:8000/v1`
+     - **API Key**: (leave blank if not set in .env)
+   - Select the model: `grag-pipeline-v1`
 
-Project phases are defined in `.planning`:
-- Phase 1: foundation & storage (complete)
-- Phase 2: graph foundation (complete)
-- Phase 3: KB memory architecture (complete)
-- Phase 4: ingestion pipeline (complete)
-- Phase 5: entity resolution (in progress)
-- Phase 6+: core agents, retrieval engine, context management, explainability, OpenWebUI integration
+### API Endpoints
 
-## Testing
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | Chat completions (OpenAI-compatible) |
+| `/v1/models` | GET | List available models |
+| `/health` | GET | Health check |
+| `/api/v1/ingest` | POST | Ingest documents |
+| `/api/v1/review-queue` | GET | List pending reviews |
 
-Run unit tests:
+### Streaming
+
+Streaming is supported via Server-Sent Events:
+
+```bash
+curl -N http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "grag-pipeline-v1", "messages": [{"role": "user", "content": "Hello"}], "stream": true}'
+```
+
+## Development
+
+### Running Tests
 
 ```bash
 pytest -q
 ```
 
-## Notes
+### Project Phases
 
-- This repo is under active development; APIs and data models may change.
-- Graph temporal invariants are enforced by `app/ingestion/graph_writer.py` and `.planning` requirements.
-- Use the roadmaps and plan documents in `.planning` for implementation status and next tasks.
+All 10 phases complete (v1.0 milestone):
 
-## Contributing
+1. Foundation & Storage
+2. Graph Foundation  
+3. KB Memory Architecture
+4. Ingestion Pipeline
+5. Entity Resolution
+6. Core Agents
+7. Retrieval Engine
+8. Context Management
+9. Explainability
+10. OpenWebUI Integration
 
-- Follow issue/PR template.
-- Add features in a new phase under `.planning/phases`.
-- Keep KR and KB separation strict in all code paths.
+## Hardware Requirements
+
+| Component | Requirement |
+|-----------|-------------|
+| VRAM | 8GB (for LLM) |
+| RAM | 16GB |
+| Neo4j Heap | 2GB (configured in neo4j.conf) |
 
 ## License
 
-TBD
+MIT
 
+## Support
+
+- Open an issue on GitHub
+- Check docs in `docs/` directory
+- Review `.planning/` for implementation details
