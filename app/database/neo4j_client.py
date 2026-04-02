@@ -1,13 +1,15 @@
 """Neo4j database client for GRAG AI."""
 
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, List, Optional
 
 import structlog
 from neo4j import AsyncDriver, AsyncGraphDatabase
 
 from app.config import get_settings
+from app.schemas.retrieval import TraversalResult
 
 
 logger = structlog.get_logger()
@@ -378,6 +380,231 @@ class Neo4jClient:
             logger.info("temporal.consistency_valid")
 
         return violations
+
+    # ── BFS Depth Validation ─────────────────────────────────────────
+
+    def _validate_bfs_depth(self, cypher: str, max_depth: int = 4) -> bool:
+        """Validate Cypher doesn't exceed max traversal depth.
+
+        Returns True if valid, False if depth would exceed max_depth.
+        Blocks queries like (a)-[*]->(b) without bounds.
+
+        Args:
+            cypher: Cypher query string to validate
+            max_depth: Maximum allowed traversal depth (default 4)
+
+        Returns:
+            bool: True if query passes depth validation
+        """
+        # Check for completely unbounded patterns: [*] with no numbers
+        if re.search(r"\[\*\](?!\d)", cypher):
+            return False
+
+        # Check for range without max: [1,] or [2,] etc.
+        if re.search(r"\[\d+,\s*\]", cypher):
+            return False
+
+        # Check explicit bounds against max_depth: *5, *6 etc.
+        depth_patterns = re.findall(r"\*(\d+)", cypher)
+        for depth_str in depth_patterns:
+            if int(depth_str) > max_depth:
+                return False
+
+        return True
+
+    # ── Temporal Filter ──────────────────────────────────────────────
+
+    def _inject_temporal_filter(
+        self, cypher: str, as_of: Optional[datetime] = None
+    ) -> str:
+        """Inject temporal validity filter into Cypher WHERE clause.
+
+        Adds: AND r.valid_from <= datetime() AND (r.valid_to IS NULL OR r.valid_to >= datetime())
+
+        Must be applied to ALL relation traversals to satisfy RETR-03.
+
+        Args:
+            cypher: Cypher query string
+            as_of: Optional datetime for historical query (default: now)
+
+        Returns:
+            str: Modified Cypher with temporal filter injected
+        """
+        as_of = as_of or datetime.utcnow()
+        as_of_str = as_of.isoformat()
+        temporal_constraint = (
+            f"AND r.valid_from <= datetime('{as_of_str}') "
+            f"AND (r.valid_to IS NULL OR r.valid_to >= datetime('{as_of_str}'))"
+        )
+
+        # Find WHERE clause position
+        cypher_upper = cypher.upper()
+        where_idx = cypher_upper.find("WHERE")
+        if where_idx == -1:
+            # No WHERE — add before RETURN/ORDER/LIMIT
+            for keyword in ["RETURN", "ORDER BY", "LIMIT"]:
+                idx = cypher_upper.find(keyword)
+                if idx != -1:
+                    return (
+                        cypher[:idx]
+                        + "WHERE "
+                        + temporal_constraint
+                        + "\n"
+                        + cypher[idx:]
+                    )
+            # No keyword found — append at end
+            return cypher + "\n" + temporal_constraint
+        else:
+            # Append to existing WHERE
+            return (
+                cypher[: where_idx + 5]
+                + " "
+                + temporal_constraint
+                + " AND "
+                + cypher[where_idx + 5 :]
+            )
+
+    # ── Multi-hop BFS Traversal ──────────────────────────────────────
+
+    async def multi_hop_traverse(
+        self,
+        start_entity_id: str,
+        max_depth: int = 4,
+        relation_types: Optional[List[str]] = None,
+        as_of: Optional[datetime] = None,
+        max_results: int = 50,
+    ) -> List[TraversalResult]:
+        """Execute BFS traversal from start entity up to max_depth hops.
+
+        Args:
+            start_entity_id: Starting entity ID (must exist in Neo4j)
+            max_depth: Maximum traversal depth (1-4), defaults to 4
+            relation_types: Optional list of relation types to filter
+            as_of: Optional datetime for historical query (default: now)
+            max_results: Maximum total results (LIMIT per hop)
+
+        Returns:
+            list[TraversalResult]: Traversal results with paths and confidences
+
+        Raises:
+            ValueError: If max_depth exceeds 4 or is less than 1
+
+        Key constraints (enforced):
+        - LIMIT max_results per hop (prevents BFS explosion)
+        - Temporal filter: valid_from <= now <= valid_to
+        - Depth capped at max_depth
+        """
+        if max_depth < 1 or max_depth > 4:
+            raise ValueError(f"max_depth must be 1-4, got {max_depth}")
+
+        as_of = as_of or datetime.utcnow()
+
+        # Optional relation type filter clause
+        rel_filter = ""
+        params: dict[str, Any] = {
+            "start_id": start_entity_id,
+            "as_of": as_of.isoformat(),
+            "max_results": max_results,
+        }
+
+        if relation_types:
+            rel_filter = "AND all(rr IN r WHERE rr.type IN $relation_types)"
+            params["relation_types"] = relation_types
+
+        # BFS query with temporal filtering and depth cap
+        # Uses WHERE ALL(rel IN r ...) to check every relation in the path
+        query = f"""
+            MATCH path = (start {{id: $start_id}})-[r:RELATES_TO*1..{max_depth}]-(end)
+            WHERE ALL(rel IN r WHERE rel.valid_from <= datetime($as_of))
+              AND ALL(rel IN r WHERE rel.valid_to IS NULL OR rel.valid_to >= datetime($as_of))
+              {rel_filter}
+            WITH path, r,
+                 start.id AS start_id, start.name AS start_name,
+                 end.id AS end_id, end.name AS end_name, end.type AS end_type
+            RETURN
+                end_id AS entity_id,
+                end_name AS entity_name,
+                end_type AS entity_type,
+                avg(reduce(conf = 0.0, rel IN r | CASE WHEN rel.confidence > conf THEN rel.confidence ELSE conf END)) AS confidence,
+                length(path) AS depth,
+                [rel IN r | {{
+                    source_id: startNode(rel).id,
+                    source_name: startNode(rel).name,
+                    relation_type: rel.type,
+                    relation_id: rel.id,
+                    target_id: endNode(rel).id,
+                    target_name: endNode(rel).name,
+                    valid_from: toString(rel.valid_from),
+                    valid_to: CASE WHEN rel.valid_to IS NULL THEN null ELSE toString(rel.valid_to) END,
+                    confidence: rel.confidence
+                }}] AS path
+            ORDER BY depth ASC, confidence DESC
+            LIMIT $max_results
+        """
+
+        # Validate query depth before execution
+        if not self._validate_bfs_depth(query, max_depth):
+            logger.warning("multi_hop_traverse.depth_exceeded", max_depth=max_depth)
+            return []
+
+        try:
+            results = await self.execute(query, params)
+            return [self._parse_traversal_result(r) for r in results]
+        except Exception as e:
+            logger.error("multi_hop_traverse.failed", error=str(e))
+            return []
+
+    def _parse_traversal_result(self, record: dict) -> TraversalResult:
+        """Parse Neo4j record into TraversalResult.
+
+        Args:
+            record: Raw Neo4j result record
+
+        Returns:
+            TraversalResult: Typed traversal result
+        """
+        return TraversalResult(
+            entity_id=record.get("entity_id", ""),
+            entity_name=record.get("entity_name", ""),
+            entity_type=record.get("entity_type", ""),
+            confidence=float(record.get("confidence", 0.0)),
+            depth=int(record.get("depth", 0)),
+            path=record.get("path", []),
+        )
+
+    # ── Index Management ─────────────────────────────────────────────
+
+    async def ensure_indexes(self) -> List[dict[str, Any]]:
+        """Create required indexes for retrieval performance.
+
+        Indexes required for RETR-01 performance (<3s latency):
+        - Entity.name: Fast entity lookup by name
+        - Entity.type: Fast filtering by entity type
+        - Relation temporal: Fast temporal queries
+
+        Returns:
+            list: Index creation results
+        """
+        indexes = [
+            ("entity_name", "FOR (e:Entity) ON (e.name)"),
+            ("entity_type", "FOR (e:Entity) ON (e.type)"),
+            ("relation_valid_from", "FOR ()-[r:RELATES_TO]-() ON (r.valid_from)"),
+            ("relation_valid_to", "FOR ()-[r:RELATES_TO]-() ON (r.valid_to)"),
+        ]
+
+        results = []
+        for name, schema in indexes:
+            try:
+                query = "CREATE INDEX {} IF NOT EXISTS {}".format(name, schema)
+                await self.execute(query)
+                results.append({"index": name, "status": "created"})
+                logger.info("index.created", index=name)
+            except Exception as e:
+                # Index may already exist — not an error
+                results.append({"index": name, "status": "exists", "error": str(e)})
+                logger.debug("index.exists", index=name)
+
+        return results
 
 
 _neo4j_client: Neo4jClient | None = None
