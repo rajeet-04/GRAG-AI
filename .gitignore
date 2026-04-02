@@ -1,5 +1,5 @@
-.planning/
-planning/
+# .planning/
+# planning/
 app/ingestion/__pycache__/*
 *.pyc
 *.pyo
@@ -26,3 +26,5 @@ venv.bak/
 *.coverage
 .coverage.*
 htmlcov/
+*.env.*
+.env
