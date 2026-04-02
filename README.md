@@ -208,7 +208,7 @@ All 10 phases complete (v1.0 milestone):
 
 ## License
 
-MIT
+GNU General Public License v3
 
 ## Support
 
