@@ -20,6 +20,11 @@ from langgraph.graph import END, START, StateGraph
 
 from app.agents.state import GraphState
 
+# ---------------------------------------------------------------------------
+# Real agent node imports
+# ---------------------------------------------------------------------------
+
+from app.agents.query_agent import query_agent_node  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Stub node functions — will be replaced by real agent implementations
@@ -33,14 +38,6 @@ def ingestion_agent_node(state: GraphState) -> dict[str, Any]:
     and RelationExtractionService from Phase 4.
     """
     return {"agent_trace": ["ingestion_agent:stub"]}
-
-
-def query_agent_node(state: GraphState) -> dict[str, Any]:
-    """Query Agent: extracts search intent and generates Cypher query.
-
-    Stub — will be implemented with local qwen3.5:9b for fast intent extraction.
-    """
-    return {"agent_trace": ["query_agent:stub"]}
 
 
 def kr_search_node(state: GraphState) -> dict[str, Any]:
