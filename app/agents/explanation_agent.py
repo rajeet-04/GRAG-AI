@@ -40,7 +40,7 @@ Explain your reasoning as a chain: A → B → C → ...
 Each step should connect logically to the next.
 
 ## Section 3: Mermaid Diagram
-Generate a Mermaid.js graph showing the key reasoning or data flow.
+Generate a Mermaid.js flowchart showing the key reasoning or data flow.
 Format:
 ```mermaid
 graph TD
@@ -49,10 +49,18 @@ graph TD
     C --> D[Answer]
 ```
 
+MERMAID RULES — follow strictly to avoid parse errors:
+- Use ONLY graph TD or graph LR direction
+- Node labels use square brackets ONLY: A[Label here]
+- Labels must be SHORT (1-4 words), NO double quotes inside brackets
+- NO special characters inside brackets: no "quotes", no colons, no apostrophes
+- Use underscores instead of spaces in labels if needed: A[Check_Input]
+- Arrows must be exactly: --> (no spaces, no other styles)
+- Maximum 8 nodes to keep it readable
+
 CRITICAL:
 - Output ONLY these three sections, nothing else
 - CODE questions MUST have a working code block in Section 1
-- Use valid Mermaid.js syntax
 - Reasoning steps must use "→" arrows"""
 
 

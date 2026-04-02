@@ -12,13 +12,14 @@ Integrates with OpenWebUI via OpenAI-compatible API and uses Ollama for local LL
 ## Key Features
 
 - ✅ Dual-memory architecture (KR/KB strict firewall)
+- ✅ Hybrid Inference: Local Ingestion + Ollama Cloud reasoning for speed
 - ✅ Temporal versioning in Neo4j (valid_from/valid_to)
-- ✅ 5-agent LangGraph orchestration (Ingestion, Query, Context Builder, Explanation)
+- ✅ 6-agent LangGraph orchestration (Ingestion, Graph Builder, Query, Parallel Search, Context, Explanation)
 - ✅ Multi-hop graph traversal (2-4 hops) with vector fallback
 - ✅ Context window management with tiktoken (8192 token budget)
-- ✅ Explainable AI with reasoning paths + Mermaid diagrams
-- ✅ OpenAI-compatible API (`/v1/chat/completions`)
-- ✅ Streaming support (SSE)
+- ✅ Explainable AI (xAI) with reasoning paths + Mermaid diagrams
+- ✅ True Streaming support (SSE) with real-time token delivery
+- ✅ OpenAI-compatible API (`/v1/chat/completions`) for Open WebUI integration
 
 ## Architecture
 
@@ -55,11 +56,11 @@ app/
 ### 1. Clone and Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/grag-ai.git
+# Clone repository
+git clone https://github.com/rajeet-04/GRAG-AI.git
 cd grag-ai
 
-# Copy environment template
+# Create your .env
 cp env.example .env
 ```
 
@@ -73,9 +74,11 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password
 
-# Required: Ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:7b-q4_k_m
+# Ollama Cloud Configuration (Context Builder, Explanation Agent — High Performance)
+OLLAMA_CLOUD_URL=https://ollama.com
+OLLAMA_CLOUD_MODEL=minimax-m2.7:cloud
+OLLAMA_CLOUD_API_KEY=your_cloud_api_key_here
+OLLAMA_CLOUD_ENABLED=true  # Set to true to offload reasoning to cloud
 
 # Required: ChromaDB
 CHROMADB_PATH=./data/chromadb
@@ -90,12 +93,31 @@ LOG_LEVEL=INFO
 ENVIRONMENT=development
 ```
 
-### 3. Run with Docker
+### Step 3: Deployment with Docker Compose (GPU & Hybrid)
+
+The recommended way to run GRAG AI is via the included `docker-compose.yml`, which handles Neo4j, local Ollama (with GPU support), the GRAG API, and Open WebUI automatically.
+
+### Step 4: Start the Stack
 
 ```bash
-# Build and run
-docker build -t grag-ai .
-docker run -p 8000:8000 --env-file .env grag-ai
+# Pull and start all services
+docker compose up -d
+
+# Monitor model pull progress (required on first run)
+docker logs -f grag-ollama-init
+```
+
+**Key Docker Services:**
+- **`grag-api`**: The FastAPI backend (port 8000)
+- **`grag-open-webui`**: The chat UI (port 3000)
+- **`grag-ollama`**: Local inference with NVIDIA GPU passthrough
+- **`grag-neo4j`**: Knowledge Graph storage
+
+### Step 4: Verify Models
+
+Wait for the `grag-ollama-init` service to finish pulling models:
+```bash
+docker logs -f grag-ollama-init
 ```
 
 ### 4. Run Locally
@@ -139,14 +161,18 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 | `/api/v1/ingest` | POST | Ingest documents |
 | `/api/v1/review-queue` | GET | List pending reviews |
 
-### Streaming
+### True Streaming
 
-Streaming is supported via Server-Sent Events:
+GRAG AI implements a two-phase streaming architecture for maximum responsiveness:
+1. **Pipeline Processing**: Runs agentic search + context building (~1-3s).
+2. **Token Streaming**: Once context is ready, tokens stream in real-time from Ollama Cloud/Local to the UI.
+
+This ensures you see `[GRAG is processing your request...]` immediately, followed by token-by-token generation once the facts are retrieved.
 
 ```bash
 curl -N http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "grag-pipeline-v1", "messages": [{"role": "user", "content": "Hello"}], "stream": true}'
+  -d '{"model": "grag-pipeline-v1", "messages": [{"role": "user", "content": "Explain binary search"}], "stream": true}'
 ```
 
 ## Development
