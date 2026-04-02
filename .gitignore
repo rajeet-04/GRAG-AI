@@ -1,5 +1,8 @@
-# .planning/
-# planning/
+# Grag AI Internal
+.planning/
+AGENT/
+/data/
+/node_modules/
 app/ingestion/__pycache__/*
 *.pyc
 *.pyo
