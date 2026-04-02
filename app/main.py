@@ -3,12 +3,15 @@
 import structlog
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Dict
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.api.ingestion import router as ingestion_router
+from app.api.review_queue import router as review_queue_router
 
 
 settings = get_settings()
@@ -35,7 +38,7 @@ class HealthStatus(BaseModel):
 
     status: str
     environment: str
-    services: dict[str, dict[str, str | bool]]
+    services: Dict[str, Dict[str, str]]
 
 
 @asynccontextmanager
@@ -82,6 +85,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(ingestion_router, prefix="/api/v1", tags=["ingestion"])
+app.include_router(review_queue_router, prefix="/api/v1", tags=["review-queue"])
 
 
 @app.get("/health", response_model=HealthStatus)
