@@ -62,6 +62,7 @@ class GraphState(TypedDict):
     reasoning_steps: list[str]
     mermaid_path: str
     confidence_scores: dict
+    citation_map: dict[str, int]  # Maps "[1]" -> reasoning step index
 
     # ── Error handling ─────────────────────────────────────────
     errors: Annotated[list[dict], operator.add]
@@ -114,6 +115,7 @@ def create_initial_state(user_query: str, session_id: str) -> GraphState:
         reasoning_steps=[],
         mermaid_path="",
         confidence_scores={},
+        citation_map={},
         # Error handling
         errors=[],
         retry_count=0,
