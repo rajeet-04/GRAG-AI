@@ -189,6 +189,128 @@ def _format_confidence(confidence: dict) -> str:
     return "\n".join(f"  - {k}: {v}" for k, v in confidence.items())
 
 
+def format_confidence_percent(confidence: float) -> str:
+    """Format confidence as percentage string.
+
+    Args:
+        confidence: Float between 0.0 and 1.0
+
+    Returns:
+        Formatted string like "(Confidence: 87%)"
+    """
+    if confidence is None:
+        return "(Confidence: N/A)"
+    percentage = round(confidence * 100)
+    return f"(Confidence: {percentage}%)"
+
+
+def _annotate_reasoning_with_confidence(
+    steps: list[str], paths: list[dict]
+) -> list[str]:
+    """Annotate reasoning steps with confidence percentages.
+
+    Matches each step index to the corresponding path's confidence score
+    and appends the formatted percentage string.
+
+    Args:
+        steps: Raw reasoning step strings from LLM
+        paths: Original graph path dicts with confidence scores
+
+    Returns:
+        Annotated reasoning steps with "(Confidence: XX%)" appended
+    """
+    annotated = []
+    for i, step in enumerate(steps):
+        conf = None
+        if i < len(paths) and isinstance(paths[i], dict):
+            conf = paths[i].get("confidence")
+        elif i < len(paths) and isinstance(paths[i], (int, float)):
+            conf = paths[i]
+
+        conf_str = format_confidence_percent(conf)
+        annotated.append(f"{step} {conf_str}")
+
+    return annotated
+
+
+def select_top_n_paths(paths: list[dict], n: int = 10) -> tuple[list[dict], list[dict]]:
+    """Select top-N paths by confidence score.
+
+    Args:
+        paths: List of path dicts with 'confidence' key
+        n: Maximum number of paths to select (default 10, minimum 5)
+
+    Returns:
+        Tuple of (selected_paths, excluded_paths)
+    """
+    if not paths:
+        return [], []
+
+    # Sort by confidence descending
+    sorted_paths = sorted(paths, key=lambda p: p.get("confidence", 0.0), reverse=True)
+
+    # Enforce minimum 5, maximum 10
+    n = max(5, min(n, 10))
+
+    return sorted_paths[:n], sorted_paths[n:]
+
+
+def _summarize_excluded_paths(excluded: list[dict]) -> str:
+    """Generate a summary sentence for excluded lower-confidence paths.
+
+    Args:
+        excluded: List of path dicts that were not selected for reasoning
+
+    Returns:
+        A summary string describing excluded paths conceptually
+    """
+    if not excluded:
+        return ""
+
+    avg_conf = sum(p.get("confidence", 0.0) for p in excluded) / len(excluded)
+    avg_pct = round(avg_conf * 100)
+    return (
+        f"*Additionally, {len(excluded)} lower-confidence paths "
+        f"(average {avg_pct}% confidence) supported this conclusion "
+        f"but are omitted from the detailed reasoning for brevity.*"
+    )
+
+
+def validate_mermaid(mermaid: str) -> bool:
+    """Validate Mermaid syntax lightly.
+
+    Checks:
+    - Matching brackets for node definitions
+    - Valid graph direction (TD, LR, RL, BT)
+    - Arrow syntax (-->, ---, ==>, etc.)
+
+    Args:
+        mermaid: Mermaid diagram source
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not mermaid or not mermaid.strip():
+        return False
+
+    # Must start with graph direction
+    if not re.match(r"^\s*(graph|flowchart)\s+(TD|LR|RL|BT)", mermaid, re.IGNORECASE):
+        return False
+
+    # Check balanced brackets in node definitions
+    open_brackets = mermaid.count("[")
+    close_brackets = mermaid.count("]")
+    if open_brackets != close_brackets:
+        return False
+
+    # Check for valid arrows
+    valid_arrows = re.findall(r"(-->|---|==>|===|-->|.-)", mermaid)
+    if not valid_arrows:
+        return False
+
+    return True
+
+
 # ---------------------------------------------------------------------------
 # LangGraph node function
 # ---------------------------------------------------------------------------
@@ -224,11 +346,20 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
         path_count=len(paths),
     )
 
+    # Select top-N highest-confidence paths for reasoning
+    selected_paths, excluded_paths = select_top_n_paths(paths)
+
+    logger.info(
+        "explanation_agent.path_selection",
+        selected=len(selected_paths),
+        excluded=len(excluded_paths),
+    )
+
     # Build prompt
     user_msg = EXPLANATION_USER_PROMPT.format(
         query=user_query,
         context=context if context else "No context available.",
-        paths=_format_paths(paths),
+        paths=_format_paths(selected_paths),
         confidence=_format_confidence(confidence),
     )
 
@@ -264,6 +395,16 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     parsed = parse_three_section_response(raw_text)
     answer = parsed["answer"]
 
+    # Annotate reasoning steps with confidence percentages
+    reasoning_steps = _annotate_reasoning_with_confidence(
+        parsed["reasoning_steps"], selected_paths
+    )
+
+    # Add excluded paths summary to answer if any were dropped
+    if excluded_paths:
+        excluded_summary = _summarize_excluded_paths(excluded_paths)
+        answer = answer + "\n\n" + excluded_summary
+
     # Add truncation disclaimer if applicable
     if context_truncated:
         disclaimer = "\n\n**Note:** This answer is based on incomplete context data as some information was truncated to fit the token budget. The reasoning below may not reflect all available knowledge."
@@ -275,11 +416,27 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
             warning=truncation_warning,
         )
 
+    # Validate Mermaid syntax — graceful degradation if invalid
+    mermaid_raw = parsed["mermaid"]
+    if validate_mermaid(mermaid_raw):
+        mermaid_path = mermaid_raw
+        logger.info("explanation_agent.mermaid_validated")
+    else:
+        mermaid_path = ""
+        logger.warning(
+            "explanation_agent.mermaid_invalid",
+            reason="syntax validation failed, dropping diagram",
+        )
+
+    # Build citation map: "[n]" -> step index
+    citation_map = {f"[{i + 1}]": i for i in range(len(reasoning_steps))}
+
     logger.info(
         "explanation_agent.complete",
-        answer_length=len(parsed["answer"]),
-        reasoning_steps=len(parsed["reasoning_steps"]),
-        has_mermaid=bool(parsed["mermaid"]),
+        answer_length=len(answer),
+        reasoning_steps=len(reasoning_steps),
+        has_mermaid=bool(mermaid_path),
+        citation_count=len(citation_map),
     )
 
     existing_trace = state.get("agent_trace", [])
@@ -287,8 +444,9 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     return {
         **state,
         "answer": answer,
-        "reasoning_steps": parsed["reasoning_steps"],
-        "mermaid_path": parsed["mermaid"],
+        "reasoning_steps": reasoning_steps,
+        "mermaid_path": mermaid_path,
         "confidence_scores": confidence,
+        "citation_map": citation_map,
         "agent_trace": existing_trace + ["ExplanationAgent: generated xAI output"],
     }
