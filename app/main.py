@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.config import get_settings
 from app.api.ingestion import router as ingestion_router
 from app.api.review_queue import router as review_queue_router
+from app.api.openai import router as openai_router
 
 
 settings = get_settings()
@@ -89,6 +90,7 @@ app.add_middleware(
 # Include routers
 app.include_router(ingestion_router, prefix="/api/v1", tags=["ingestion"])
 app.include_router(review_queue_router, prefix="/api/v1", tags=["review-queue"])
+app.include_router(openai_router, prefix="/v1", tags=["openai"])
 
 
 @app.get("/health", response_model=HealthStatus)
