@@ -469,6 +469,11 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
 
     existing_trace = state.get("agent_trace", [])
 
+    trace_msg = (
+        f"ContextBuilder: merged {len(ranked_entities)} entities, "
+        f"{len(ranked_relations)} relations, "
+        f"token_count={merged['token_count']}"
+    )
     trace_msg_extended = trace_msg
     if merged["truncated"]:
         trace_msg_extended += f" — truncated: {', '.join(merged['truncated'])}"

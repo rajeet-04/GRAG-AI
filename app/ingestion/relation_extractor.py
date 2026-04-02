@@ -122,6 +122,7 @@ Text: {text}
                 ],
                 temperature=0.3,
                 max_tokens=1024,
+                think=False,  # Disable thinking for structured JSON output
             )
 
             content = response.get("content", "").strip()

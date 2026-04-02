@@ -1,32 +1,40 @@
-version: '3.8'
+# ─────────────────────────────────────────────────────────────────────────────
+# GRAG AI — Full Stack Docker Compose
+# Services: Neo4j | Ollama (GPU) | FastAPI GRAG Pipeline | Open WebUI (GPU)
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
+  # ── Neo4j Knowledge Graph ─────────────────────────────────────────────────
   neo4j:
     image: neo4j:5.20
     container_name: grag-neo4j
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "7474:7474"    # HTTP browser
+      - "7687:7687"    # Bolt protocol
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
       - ./neo4j/neo4j.conf:/conf/neo4j.conf:ro
     environment:
-      - NEO4J_AUTH=neo4j/password
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p password 'RETURN 1' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-password} 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     deploy:
       resources:
         limits:
           memory: 3G
         reservations:
           memory: 1G
+    restart: unless-stopped
 
+  # ── Ollama Local LLM — NVIDIA GPU ─────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: grag-ollama
@@ -34,20 +42,43 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # GPU support (uncomment if you have NVIDIA GPU)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
+      # ollama/ollama image has no curl — use the ollama CLI to check readiness
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
       timeout: 10s
-      retries: 3
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
 
+  # ── Ollama Model Puller — runs once after Ollama starts ──────────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: grag-ollama-init
+    volumes:
+      - ollama_data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      echo 'Waiting for Ollama...' &&
+      sleep 5 &&
+      ollama pull ${OLLAMA_MODEL:-qwen3.5:9b} &&
+      ollama pull ${EMBEDDING_MODEL:-nomic-embed-text} &&
+      echo 'All models ready.'
+    restart: on-failure
+
+  # ── GRAG FastAPI Pipeline ─────────────────────────────────────────────────
   fastapi:
     build:
       context: .
@@ -57,17 +88,25 @@ services:
       - "8000:8000"
     volumes:
       - ./app:/app/app
-      - ./data/chromadb:/data/chromadb
+      - chromadb_data:/data/chromadb
+    env_file:
+      - .env
     environment:
-      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
+      # Override localhost addresses for Docker networking
+      - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=${NEO4J_USER:-neo4j}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b-q4_k_m}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:9b}
+      - OLLAMA_CLOUD_URL=${OLLAMA_CLOUD_URL:-https://api.ollama.com/v1}
+      - OLLAMA_CLOUD_MODEL=${OLLAMA_CLOUD_MODEL:-minimax-m2.7:cloud}
+      - OLLAMA_CLOUD_API_KEY=${OLLAMA_CLOUD_API_KEY:-}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - CHROMADB_PATH=/data/chromadb
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - API_KEY=${API_KEY:-}
+      - MODEL_NAME=${MODEL_NAME:-grag-pipeline-v1}
     depends_on:
       neo4j:
         condition: service_healthy
@@ -75,11 +114,58 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
+  # ── Open WebUI — Chat Interface ───────────────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: grag-open-webui
+    ports:
+      - "3000:8080"
+    volumes:
+      - open_webui_data:/app/backend/data
+    environment:
+      # ── Ollama integration (for direct model access in WebUI) ──────────────
+      - OLLAMA_BASE_URL=http://ollama:11434
+
+      # ── GRAG pipeline as OpenAI-compatible backend ─────────────────────────
+      # This is the primary custom backend — GRAG pipeline appears as a model
+      - OPENAI_API_BASE_URL=http://fastapi:8000/v1
+      - OPENAI_API_KEY=${API_KEY:-grag-local}
+
+      # ── Authentication ────────────────────────────────────────────────────
+      - WEBUI_AUTH=true
+
+      # ── Disable telemetry ─────────────────────────────────────────────────
+      - SCARF_NO_ANALYTICS=true
+      - DO_NOT_TRACK=true
+      - ANONYMIZED_TELEMETRY=false
+
+      # ── WebUI settings ────────────────────────────────────────────────────
+      - WEBUI_NAME=GRAG AI
+    depends_on:
+      fastapi:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Volumes
+# ─────────────────────────────────────────────────────────────────────────────
 volumes:
   neo4j_data:
   neo4j_logs:
   ollama_data:
+  chromadb_data:
+  open_webui_data:

@@ -23,12 +23,23 @@ class Settings(BaseSettings):
     neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")
     neo4j_password: str = Field(default="password", alias="NEO4J_PASSWORD")
 
-    # Ollama Configuration
+    # Ollama Local Configuration (Query Agent, Graph Builder)
     ollama_base_url: str = Field(
         default="http://localhost:11434", alias="OLLAMA_BASE_URL"
     )
-    ollama_model: str = Field(default="qwen2.5:7b-q4_k_m", alias="OLLAMA_MODEL")
+    ollama_model: str = Field(default="qwen3.5:9b", alias="OLLAMA_MODEL")
     ollama_api_key: Optional[str] = Field(default=None, alias="OLLAMA_API_KEY")
+
+    # Ollama Cloud Configuration (Context Builder, Explanation Agent)
+    ollama_cloud_url: str = Field(
+        default="https://api.ollama.com/v1", alias="OLLAMA_CLOUD_URL"
+    )
+    ollama_cloud_model: str = Field(
+        default="minimax-m2.7:cloud", alias="OLLAMA_CLOUD_MODEL"
+    )
+    ollama_cloud_api_key: Optional[str] = Field(
+        default=None, alias="OLLAMA_CLOUD_API_KEY"
+    )
 
     # Embedding Model
     embedding_model: str = Field(default="nomic-embed-text", alias="EMBEDDING_MODEL")

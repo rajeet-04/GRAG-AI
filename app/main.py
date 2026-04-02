@@ -37,7 +37,7 @@ class HealthStatus(BaseModel):
 
     status: str
     environment: str
-    services: Dict[str, Dict[str, str]]
+    services: Dict[str, Dict[str, str | bool]]
 
 
 @asynccontextmanager

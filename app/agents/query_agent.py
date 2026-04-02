@@ -168,6 +168,47 @@ def _extract_temporal_from_query(query: str) -> dict[str, Any]:
     return temporal
 
 
+def _build_safe_cypher(search_term: str) -> str:
+    """Build a conservative Cypher query that is syntactically valid.
+
+    Uses a simple case-insensitive name match with optional neighbor expansion.
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9 _:-]", " ", search_term)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()[:80]
+
+    if not cleaned:
+        return (
+            "MATCH (e:Entity) "
+            "OPTIONAL MATCH (e)-[r:RELATES_TO]-(related:Entity) "
+            "RETURN e, r, related LIMIT 50"
+        )
+
+    escaped = cleaned.replace("\\", "\\\\").replace("'", "\\'")
+    return (
+        "MATCH (e:Entity) "
+        f"WHERE toLower(e.name) CONTAINS toLower('{escaped}') "
+        "OPTIONAL MATCH (e)-[r:RELATES_TO]-(related:Entity) "
+        "RETURN e, r, related LIMIT 50"
+    )
+
+
+async def _validate_cypher_with_explain(cypher: str) -> bool:
+    """Validate Cypher syntax using Neo4j EXPLAIN without executing traversal."""
+    try:
+        from app.database.neo4j_client import get_neo4j_client
+
+        client = get_neo4j_client()
+        await client.execute(f"EXPLAIN {cypher}")
+        return True
+    except Exception as e:
+        logger.warning(
+            "query_agent.cypher_explain_failed",
+            error=str(e),
+            cypher_preview=cypher[:200],
+        )
+        return False
+
+
 async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     """Query Agent LangGraph node: NL → intent + Cypher + temporal filters.
 
@@ -214,6 +255,7 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
             ],
             temperature=0.1,
             max_tokens=512,
+            think=False,  # JSON output — disable thinking trace
         )
 
         intent_content = intent_response.get("content", "")
@@ -259,6 +301,7 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
             ],
             temperature=0.1,
             max_tokens=1024,
+            think=False,  # Cypher output — disable thinking trace
         )
 
         cypher_content = cypher_response.get("content", "").strip()
@@ -271,18 +314,22 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
             )
             cypher_content = cypher_content.strip()
 
+        fallback_cypher = _build_safe_cypher(search_intent or user_query)
+
         # Basic Cypher validation — must contain MATCH
         if "MATCH" not in cypher_content.upper():
             logger.warning(
                 "query_agent.cypher_invalid", cypher_preview=cypher_content[:200]
             )
-            # Generate a safe fallback query
-            cypher_content = (
-                "MATCH (e:Entity) "
-                "WHERE e.name CONTAINS $search_term "
-                "OPTIONAL MATCH (e)-[r:RELATES_TO]-(related) "
-                "RETURN e, r, related LIMIT 50"
+            cypher_content = fallback_cypher
+
+        # Strong validation using Neo4j parser; fallback if invalid.
+        if not await _validate_cypher_with_explain(cypher_content):
+            logger.warning(
+                "query_agent.cypher_fallback_applied",
+                original_preview=cypher_content[:200],
             )
+            cypher_content = fallback_cypher
 
         logger.info(
             "query_agent.cypher_generated",

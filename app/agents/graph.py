@@ -1,4 +1,4 @@
-"""LangGraph agent graph with checkpointing for the GRAG AI system.
+"""LangGraph agent graph for the GRAG AI system.
 
 Agent Graph Topology:
   1. Ingestion Agent (optional — for document ingestion)
@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import structlog
@@ -44,10 +43,6 @@ from app.retrieval.fallback import (
     execute_vector_fallback,
 )
 from app.schemas.retrieval import RetrievalConfig
-
-# Max retries for cyclic recovery (CONTEXT.md Decision 5)
-MAX_RETRIES = 3
-
 
 # ---------------------------------------------------------------------------
 # Parallel search node implementations
@@ -164,19 +159,14 @@ async def kr_search_node(state: GraphState) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error("kr_search.error", error=str(e))
-        errors = state.get("errors", [])
-        errors.append(
-            {
-                "agent": "kr_search",
-                "error": str(e),
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
+        logger.warning("kr_search.error", error=str(e))
         existing_trace = state.get("agent_trace", [])
         return {
-            "errors": errors,
-            "agent_trace": existing_trace + [f"KRSearch: ERROR — {str(e)[:100]}"],
+            "kr_entities": [],
+            "kr_relations": [],
+            "kr_paths": [],
+            "agent_trace": existing_trace
+            + [f"KRSearch: degraded — {str(e)[:100]}"],
         }
 
 
@@ -263,19 +253,13 @@ async def kb_search_node(state: GraphState) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error("kb_search.error", error=str(e))
-        errors = state.get("errors", [])
-        errors.append(
-            {
-                "agent": "kb_search",
-                "error": str(e),
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
+        logger.warning("kb_search.error", error=str(e))
         existing_trace = state.get("agent_trace", [])
         return {
-            "errors": errors,
-            "agent_trace": existing_trace + [f"KBSearch: ERROR — {str(e)[:100]}"],
+            "episodic_memories": [],
+            "semantic_preferences": [],
+            "agent_trace": existing_trace
+            + [f"KBSearch: degraded — {str(e)[:100]}"],
         }
 
 
@@ -302,32 +286,23 @@ def _route_after_query(state: GraphState) -> list[str]:
 
 
 def _route_after_context_builder(state: GraphState) -> str:
-    """Route after Context Builder with cyclic error recovery.
+    """Route after Context Builder.
 
-    If errors accumulated and retry count is below max, retry context building.
-    Otherwise proceed to explanation or fail gracefully.
+    Fail fast to error handler when any upstream error exists to avoid
+    unbounded retry loops in low-memory runtime environments.
     """
     errors = state.get("errors", [])
-    retry_count = state.get("retry_count", 0)
-
-    if errors and retry_count < MAX_RETRIES:
-        return "retry"
     if errors:
         return "fail"
     return "explanation"
 
 
 def _route_after_explanation(state: GraphState) -> str:
-    """Route after Explanation Agent with cyclic error recovery.
+    """Route after Explanation Agent.
 
-    If errors accumulated and retry count is below max, retry explanation.
-    Otherwise fail gracefully with error handler message.
+    Fail fast to error handler when errors are present.
     """
     errors = state.get("errors", [])
-    retry_count = state.get("retry_count", 0)
-
-    if errors and retry_count < MAX_RETRIES:
-        return "retry"
     if errors:
         return "fail"
     return END
@@ -465,34 +440,11 @@ def _build_graph() -> StateGraph:
     return graph
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-_CHECKPOINT_DIR = Path("./data/checkpoints")
-_CHECKPOINT_DB = _CHECKPOINT_DIR / "agent_graph.db"
-
-
 def create_agent_graph() -> Any:
-    """Create and compile the GRAG AI agent graph with SQLite checkpointing.
+    """Create and compile the GRAG AI agent graph.
 
     Returns:
         A compiled LangGraph application ready for invocation.
-
-    The checkpointer persists state at every node transition, enabling:
-    - Crash recovery: resume from last successful node
-    - Human-in-the-loop: pause and inspect state mid-execution
-    - Debugging: replay any execution from checkpoint
     """
-    import sqlite3
-
-    from langgraph.checkpoint.sqlite import SqliteSaver
-
-    # Ensure checkpoint directory exists
-    _CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(str(_CHECKPOINT_DB), check_same_thread=False)
-    checkpointer = SqliteSaver(conn)
-
     graph = _build_graph()
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile()
