@@ -62,7 +62,10 @@ class EntityExtractionService:
     def __init__(self) -> None:
         """Initialize the entity extraction service."""
         self.settings = get_settings()
-        self.ollama_client = OllamaClient(use_cloud=self.settings.ollama_use_cloud)
+        use_cloud_for_ingestion = bool(
+            getattr(self.settings, "ingestion_use_cloud", False)
+        )
+        self.ollama_client = OllamaClient(use_cloud=use_cloud_for_ingestion)
         self._in_memory_store: Dict[str, Dict[str, Any]] = {}
 
     def _normalize_name(self, value: str) -> str:
@@ -293,7 +296,10 @@ class EntityExtractionService:
 
         except Exception as e:
             logger.error("entity_extraction.failed", error=str(e))
-            return []
+            fallback = self._merge_entities(self._heuristic_entities(text))
+            for entity in fallback:
+                entity["id"] = str(uuid.uuid4())
+            return fallback
 
     def _parse_json_response(self, content: str) -> List[Dict[str, Any]]:
         """

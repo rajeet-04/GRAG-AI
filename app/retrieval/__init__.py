@@ -21,6 +21,16 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.retrieval.web_search import (
+        execute_web_search,
+        format_web_search_results,
+        is_latest_data_query,
+        should_trigger_web_search,
+    )
+except ImportError:
+    pass
+
 __all__ = [
     "FallbackTrigger",
     "FallbackResult",
@@ -31,4 +41,8 @@ __all__ = [
     "merge_graph_and_vector",
     "normalize_distance_to_similarity",
     "rank_retrieval_results",
+    "execute_web_search",
+    "format_web_search_results",
+    "is_latest_data_query",
+    "should_trigger_web_search",
 ]

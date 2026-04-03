@@ -46,6 +46,7 @@ class GraphState(TypedDict):
     # ── KB retrieval results (ChromaDB) ────────────────────────
     episodic_memories: list[dict]
     semantic_preferences: list[dict]
+    web_search_results: list[dict]
 
     # ── Ranked results (late fusion) ───────────────────────────
     ranked_entities: list[dict]  # Deduplicated, scored entities
@@ -102,6 +103,7 @@ def create_initial_state(user_query: str, session_id: str) -> GraphState:
         # KB retrieval results
         episodic_memories=[],
         semantic_preferences=[],
+        web_search_results=[],
         # Ranked results
         ranked_entities=[],
         ranked_relations=[],

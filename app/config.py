@@ -35,6 +35,18 @@ class Settings(BaseSettings):
         default=120.0,
         alias="OLLAMA_REQUEST_TIMEOUT_SEC",
     )
+    ollama_vision_model: str = Field(
+        default="qwen3.5:4b",
+        alias="OLLAMA_VISION_MODEL",
+    )
+    ollama_enable_web_search: bool = Field(
+        default=True,
+        alias="OLLAMA_ENABLE_WEB_SEARCH",
+    )
+    ollama_web_search_max_results: int = Field(
+        default=5,
+        alias="OLLAMA_WEB_SEARCH_MAX_RESULTS",
+    )
 
     # Ollama Cloud Configuration (Context Builder, Explanation Agent)
     ollama_cloud_url: str = Field(
@@ -47,6 +59,7 @@ class Settings(BaseSettings):
         default=None, alias="OLLAMA_CLOUD_API_KEY"
     )
     ollama_use_cloud: bool = Field(default=False, alias="OLLAMA_USE_CLOUD")
+    ingestion_use_cloud: bool = Field(default=False, alias="INGESTION_USE_CLOUD")
 
     # Query Agent LLM Routing and Token Budgets
     query_use_cloud: bool = Field(default=False, alias="QUERY_USE_CLOUD")
@@ -72,6 +85,14 @@ class Settings(BaseSettings):
     query_warmup_timeout_sec: float = Field(
         default=20.0,
         alias="QUERY_WARMUP_TIMEOUT_SEC",
+    )
+    query_enable_web_search_fallback: bool = Field(
+        default=True,
+        alias="QUERY_ENABLE_WEB_SEARCH_FALLBACK",
+    )
+    query_web_search_latest_only: bool = Field(
+        default=False,
+        alias="QUERY_WEB_SEARCH_LATEST_ONLY",
     )
 
     # Embedding Model
@@ -100,6 +121,14 @@ class Settings(BaseSettings):
     ingestion_relation_global_pass: bool = Field(
         default=True,
         alias="INGESTION_RELATION_GLOBAL_PASS",
+    )
+    ingestion_image_max_dimension: int = Field(
+        default=1600,
+        alias="INGESTION_IMAGE_MAX_DIMENSION",
+    )
+    ingestion_image_jpeg_quality: int = Field(
+        default=85,
+        alias="INGESTION_IMAGE_JPEG_QUALITY",
     )
 
     # ChromaDB Configuration

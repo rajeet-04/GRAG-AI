@@ -132,11 +132,12 @@ class OllamaClient:
 
     async def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
         stream: bool = False,
         think: bool = False,
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Generate chat completion using native Ollama /api/chat.
 
@@ -156,8 +157,10 @@ class OllamaClient:
         Returns:
             dict with keys: content (str), thinking (str), model (str), done (bool)
         """
+        resolved_model = model or self.model
+
         payload: dict[str, Any] = {
-            "model": self.model,
+            "model": resolved_model,
             "messages": messages,
             "options": {
                 "temperature": temperature,
@@ -174,7 +177,7 @@ class OllamaClient:
         try:
             logger.info(
                 "ollama.chat.request",
-                model=self.model,
+                model=resolved_model,
                 use_cloud=self.use_cloud,
                 base_url=self.base_url,
                 message_count=len(messages),
@@ -189,7 +192,7 @@ class OllamaClient:
 
             logger.info(
                 "ollama.chat.response",
-                model=self.model,
+                model=resolved_model,
                 content_length=len(content),
                 has_thinking=bool(thinking),
                 done=response.get("done", True),
@@ -199,12 +202,86 @@ class OllamaClient:
                 "content": content,
                 "thinking": thinking,
                 "usage": response.get("prompt_eval_count", 0),
-                "model": response.get("model", self.model),
+                "model": response.get("model", resolved_model),
                 "done": response.get("done", True),
             }
 
         except Exception as e:
-            logger.error("ollama.chat.error", model=self.model, error=str(e))
+            logger.error("ollama.chat.error", model=resolved_model, error=str(e))
+            raise
+
+    async def web_search(
+        self,
+        query: str,
+        max_results: int = 5,
+    ) -> dict[str, Any]:
+        """Run Ollama cloud web search for fresh internet context.
+
+        Endpoint is hosted on ollama.com and requires OLLAMA_CLOUD_API_KEY.
+        """
+        if not query.strip():
+            return {"results": []}
+
+        if not self.api_key:
+            raise RuntimeError("OLLAMA_CLOUD_API_KEY is required for web search")
+
+        bounded = max(1, min(int(max_results), 10))
+        payload = {
+            "query": query,
+            "max_results": bounded,
+        }
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=max(5.0, float(self.settings.ollama_request_timeout_sec)),
+                headers=self._get_headers(),
+            ) as client:
+                response = await client.post(
+                    "https://ollama.com/api/web_search",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            logger.info(
+                "ollama.web_search.response",
+                result_count=len(data.get("results", [])),
+            )
+            return data
+        except Exception as e:
+            logger.error("ollama.web_search.error", error=str(e))
+            raise
+
+    async def web_fetch(self, url: str) -> dict[str, Any]:
+        """Fetch a web page using Ollama cloud web_fetch API."""
+        if not url.strip():
+            return {"title": "", "content": "", "links": []}
+
+        if not self.api_key:
+            raise RuntimeError("OLLAMA_CLOUD_API_KEY is required for web fetch")
+
+        payload = {"url": url}
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=max(5.0, float(self.settings.ollama_request_timeout_sec)),
+                headers=self._get_headers(),
+            ) as client:
+                response = await client.post(
+                    "https://ollama.com/api/web_fetch",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            logger.info(
+                "ollama.web_fetch.response",
+                url=url,
+                content_length=len(data.get("content", "")),
+            )
+            return data
+        except Exception as e:
+            logger.error("ollama.web_fetch.error", url=url, error=str(e))
             raise
 
     async def chat_stream(

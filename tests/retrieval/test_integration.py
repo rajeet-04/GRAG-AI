@@ -7,7 +7,7 @@ context building.
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestRetrievalPipeline:
@@ -40,7 +40,12 @@ class TestRetrievalPipeline:
             "agent_trace": [],
         }
 
-        result = await context_builder_node(state)
+        with patch(
+            "app.agents.context_builder.execute_web_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await context_builder_node(state)
 
         assert "ranked_entities" in result
         assert len(result["ranked_entities"]) == 1
@@ -66,7 +71,12 @@ class TestRetrievalPipeline:
             "agent_trace": [],
         }
 
-        result = await context_builder_node(state)
+        with patch(
+            "app.agents.context_builder.execute_web_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await context_builder_node(state)
 
         # e1 (graph) + ep1 (vector-only) = 2 entities
         assert len(result["ranked_entities"]) == 2
@@ -88,7 +98,12 @@ class TestRetrievalPipeline:
             "agent_trace": [],
         }
 
-        result = await context_builder_node(state)
+        with patch(
+            "app.agents.context_builder.execute_web_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await context_builder_node(state)
 
         assert result["merged_context"] == ""
         assert result["token_count"] == 0
@@ -113,7 +128,12 @@ class TestRetrievalPipeline:
             "agent_trace": [],
         }
 
-        result = await context_builder_node(state)
+        with patch(
+            "app.agents.context_builder.execute_web_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await context_builder_node(state)
 
         assert len(result["ranked_entities"]) == 1
         assert result["ranked_entities"][0]["source"] == "merged"

@@ -7,8 +7,9 @@ based truncation. KR facts are NEVER truncated — only KB content is trimmed.
 
 Priority order (highest to lowest):
 1. KR Graph facts — never truncated
-2. KB Episodic memories — drop oldest first
-3. KB Semantic preferences — lowest priority, trimmed first
+2. Web search results — fresh external facts
+3. KB Episodic memories — drop oldest first
+4. KB Semantic preferences — lowest priority, trimmed first
 
 Requirements: AGNT-04, RETR-04, RETR-05
 """
@@ -18,7 +19,12 @@ from typing import Any
 import structlog
 import tiktoken
 
-from app.config import ContextConfig
+from app.config import ContextConfig, get_settings
+from app.retrieval.web_search import (
+    execute_web_search,
+    is_latest_data_query,
+    should_trigger_web_search,
+)
 from app.retrieval.ranker import RankingConfig, rank_retrieval_results
 
 logger = structlog.get_logger()
@@ -28,8 +34,9 @@ class PriorityLevel:
     """Priority levels for context truncation."""
 
     KR_GRAPH_FACTS = 1  # NEVER truncate
-    EPISODIC_MEMORIES = 2  # Drop oldest first
-    SEMANTIC_PREFERENCES = 3  # Lowest priority
+    WEB_SEARCH_RESULTS = 2  # Fresh external context
+    EPISODIC_MEMORIES = 3  # Drop oldest first
+    SEMANTIC_PREFERENCES = 4  # Lowest priority
 
 
 def _get_encoding(model: str | None = None) -> tiktoken.Encoding:
@@ -200,6 +207,7 @@ def merge_with_budget(
     kr_relations: list[dict[str, Any]],
     episodic_memories: list[dict[str, Any]],
     semantic_preferences: list[dict[str, Any]],
+    web_search_results: list[dict[str, Any]] | None = None,
     budget: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -207,8 +215,9 @@ def merge_with_budget(
 
     Priority order (highest to lowest):
     1. KR Graph facts — NEVER truncated
-    2. KB Episodic memories — drop oldest first
-    3. KB Semantic preferences — lowest priority
+    2. Web search results — fresh external facts
+    3. KB Episodic memories — drop oldest first
+    4. KB Semantic preferences — lowest priority
 
     When the budget is exceeded, semantic preferences are trimmed first,
     then episodic memories (oldest first). KR facts are always included
@@ -248,6 +257,7 @@ def merge_with_budget(
         budget=budget,
         kr_entities=len(kr_entities),
         kr_relations=len(kr_relations),
+        web_search_results=len(web_search_results or []),
         episodic_memories=len(episodic_memories),
         semantic_preferences=len(semantic_preferences),
     )
@@ -269,6 +279,31 @@ def merge_with_budget(
         )
 
     remaining_budget = max(0, budget - kr_tokens)
+
+    # Step 1.5: Add optional web search section (fresh external context)
+    web_parts: list[str] = []
+    if web_search_results:
+        web_parts.append("\n## Web Search Results\n")
+        for idx, item in enumerate(web_search_results, start=1):
+            title = str(item.get("title", "Untitled")).strip() or "Untitled"
+            url = str(item.get("url", "")).strip()
+            snippet = str(item.get("content", "")).strip()
+
+            candidate_lines = [f"- [{idx}] {title}"]
+            if snippet:
+                candidate_lines.append(f"  {snippet[:300]}")
+            if url:
+                candidate_lines.append(f"  Source: {url}")
+
+            candidate_text = "\n".join(candidate_lines)
+            candidate_tokens = count_tokens(candidate_text)
+
+            if candidate_tokens <= remaining_budget:
+                web_parts.append(candidate_text)
+                remaining_budget -= candidate_tokens
+            else:
+                truncated.append("web_search_results")
+                break
 
     # Step 2: Add episodic memories (drop oldest first)
     episodic_parts: list[str] = ["\n## Episodic Memories\n"]
@@ -336,7 +371,12 @@ def merge_with_budget(
         semantic_parts.append("- No user preferences available")
 
     # Build final merged context
-    merged = kr_section + "\n".join(episodic_parts) + "\n".join(semantic_parts)
+    merged = (
+        kr_section
+        + ("\n".join(web_parts) if web_parts else "")
+        + "\n".join(episodic_parts)
+        + "\n".join(semantic_parts)
+    )
     total_tokens = count_tokens(merged)
     budget_pct = (total_tokens / budget * 100) if budget > 0 else 0
 
@@ -414,14 +454,30 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
     kr_relations = state.get("kr_relations", [])
     episodic = state.get("episodic_memories", [])
     semantic = state.get("semantic_preferences", [])
+    user_query = state.get("user_query", "")
+    settings = get_settings()
+
+    web_search_results: list[dict[str, Any]] = []
+    if should_trigger_web_search(
+        query=user_query,
+        kr_entities=kr_entities,
+        episodic_memories=episodic,
+        semantic_preferences=semantic,
+    ):
+        latest_query = is_latest_data_query(user_query)
+        only_latest = bool(settings.query_web_search_latest_only)
+        has_local_context = bool(kr_entities or episodic or semantic)
+        if (not only_latest) or latest_query or (not has_local_context):
+            web_search_results = await execute_web_search(user_query)
 
     # Skip if no results to process
-    if not kr_entities and not episodic and not semantic:
+    if not kr_entities and not episodic and not semantic and not web_search_results:
         existing_trace = state.get("agent_trace", [])
         return {
             **state,
             "ranked_entities": [],
             "ranked_relations": [],
+            "web_search_results": [],
             "merged_context": "",
             "token_count": 0,
             "context_truncated": False,
@@ -430,19 +486,22 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     # ── Rank results with late fusion ────────────────────────────────
-    ranking_config = RankingConfig(
-        graph_weight=0.6,  # From CONTEXT.md Decision 4
-        vector_weight=0.4,
-        max_results=50,
-    )
+    ranked_entities = []
+    ranked_relations = []
+    if kr_entities or episodic or semantic:
+        ranking_config = RankingConfig(
+            graph_weight=0.6,  # From CONTEXT.md Decision 4
+            vector_weight=0.4,
+            max_results=50,
+        )
 
-    ranked_entities, ranked_relations = rank_retrieval_results(
-        kr_entities=kr_entities,
-        kr_relations=kr_relations,
-        episodic_memories=episodic,
-        semantic_preferences=semantic,
-        config=ranking_config,
-    )
+        ranked_entities, ranked_relations = rank_retrieval_results(
+            kr_entities=kr_entities,
+            kr_relations=kr_relations,
+            episodic_memories=episodic,
+            semantic_preferences=semantic,
+            config=ranking_config,
+        )
 
     # Convert ScoredResult dicts to plain dicts for merge_with_budget
     # (which expects 'name' key for kr_entities format)
@@ -465,6 +524,7 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
         kr_relations=kr_relations,
         episodic_memories=episodic,
         semantic_preferences=semantic,
+        web_search_results=web_search_results,
     )
 
     existing_trace = state.get("agent_trace", [])
@@ -472,6 +532,7 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
     trace_msg = (
         f"ContextBuilder: merged {len(ranked_entities)} entities, "
         f"{len(ranked_relations)} relations, "
+        f"web={len(web_search_results)}, "
         f"token_count={merged['token_count']}"
     )
     trace_msg_extended = trace_msg
@@ -484,6 +545,7 @@ async def context_builder_node(state: dict[str, Any]) -> dict[str, Any]:
         **state,
         "ranked_entities": ranked_entities,
         "ranked_relations": ranked_relations,
+        "web_search_results": web_search_results,
         "merged_context": merged["context"],
         "token_count": merged["token_count"],
         "context_truncated": merged.get("context_truncated", False),

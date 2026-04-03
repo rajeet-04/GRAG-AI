@@ -15,6 +15,13 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.ingestion.image_processing import (
+    build_image_fallback_text,
+    extract_text_from_image,
+    is_supported_image_filename,
+    preprocess_image_bytes,
+)
+
 
 logger = structlog.get_logger()
 
@@ -120,6 +127,13 @@ def _extract_pdf_text(raw: bytes) -> str:
     return "\n\n".join(page_blocks).strip()
 
 
+def _is_image_upload(filename: str, content_type: str) -> bool:
+    """Detect image uploads by file extension or content-type."""
+    if content_type.startswith("image/"):
+        return True
+    return is_supported_image_filename(filename)
+
+
 def get_graph_writer():
     """Dependency to get GraphWriterService instance."""
     from app.ingestion.graph_writer import get_graph_writer_service
@@ -181,7 +195,11 @@ async def ingest_document(
 
         # Write to Neo4j with temporal metadata
         neo4j_result = await graph_writer.write_ingestion_result(
-            request.text, entities, relations, source=source
+            request.text,
+            entities,
+            relations,
+            source=source,
+            metadata=request.options or {},
         )
 
         # Store result in local memory store
@@ -277,10 +295,36 @@ async def ingest_file(
 
     try:
         text: str
-        if filename.lower().endswith(".pdf") or "pdf" in req_content_type:
+        options: Dict[str, Any] = {
+            "source": source,
+            "source_file": filename,
+            "content_type": req_content_type,
+        }
+
+        if _is_image_upload(filename, req_content_type):
+            processed_image, image_metadata = preprocess_image_bytes(raw)
+
+            try:
+                extracted = await extract_text_from_image(
+                    processed_image,
+                    filename=filename,
+                )
+                text = _clean_extracted_text(extracted)
+            except Exception:
+                text = build_image_fallback_text(filename, image_metadata)
+
+            options.update(
+                {
+                    "modality": "image",
+                    "image_metadata": image_metadata,
+                }
+            )
+        elif filename.lower().endswith(".pdf") or "pdf" in req_content_type:
             text = _extract_pdf_text(raw)
+            options["modality"] = "text/pdf"
         else:
             text = _clean_extracted_text(raw.decode("utf-8", errors="ignore"))
+            options["modality"] = "text/plain"
 
         if not text.strip():
             raise HTTPException(
@@ -288,11 +332,11 @@ async def ingest_file(
                 detail="No extractable text found in uploaded file",
             )
 
-        request = IngestRequest(
+        ingest_req = IngestRequest(
             text=text,
-            options={"source": source, "source_file": filename, "content_type": req_content_type},
+            options=options,
         )
-        return await ingest_document(request=request, graph_writer=graph_writer)
+        return await ingest_document(request=ingest_req, graph_writer=graph_writer)
     except HTTPException:
         raise
     except Exception as e:

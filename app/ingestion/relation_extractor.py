@@ -75,7 +75,10 @@ class RelationExtractionService:
     def __init__(self) -> None:
         """Initialize the relationship extraction service."""
         self.settings = get_settings()
-        self.ollama_client = OllamaClient(use_cloud=self.settings.ollama_use_cloud)
+        use_cloud_for_ingestion = bool(
+            getattr(self.settings, "ingestion_use_cloud", False)
+        )
+        self.ollama_client = OllamaClient(use_cloud=use_cloud_for_ingestion)
 
     def _normalize_name(self, value: str) -> str:
         """Normalize an entity name for relation matching."""
@@ -393,7 +396,7 @@ Text: {text}
 
         except Exception as e:
             logger.error("relation_extraction.failed", error=str(e))
-            return []
+            return self._merge_relations(self._heuristic_relations(text, entities))
 
     def _parse_json_response(self, content: str) -> List[Dict[str, Any]]:
         """

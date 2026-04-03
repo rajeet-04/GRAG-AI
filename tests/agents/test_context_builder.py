@@ -48,14 +48,16 @@ class TestPriorityLevel:
 
     def test_kr_is_highest_priority(self):
         """KR should have lowest number (highest priority)."""
-        assert PriorityLevel.KR_GRAPH_FACTS < PriorityLevel.EPISODIC_MEMORIES
+        assert PriorityLevel.KR_GRAPH_FACTS < PriorityLevel.WEB_SEARCH_RESULTS
+        assert PriorityLevel.WEB_SEARCH_RESULTS < PriorityLevel.EPISODIC_MEMORIES
         assert PriorityLevel.EPISODIC_MEMORIES < PriorityLevel.SEMANTIC_PREFERENCES
 
     def test_priority_values(self):
         """Test actual priority values."""
         assert PriorityLevel.KR_GRAPH_FACTS == 1
-        assert PriorityLevel.EPISODIC_MEMORIES == 2
-        assert PriorityLevel.SEMANTIC_PREFERENCES == 3
+        assert PriorityLevel.WEB_SEARCH_RESULTS == 2
+        assert PriorityLevel.EPISODIC_MEMORIES == 3
+        assert PriorityLevel.SEMANTIC_PREFERENCES == 4
 
 
 class TestMergeWithBudget:

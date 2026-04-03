@@ -292,7 +292,8 @@ def _route_after_context_builder(state: GraphState) -> str:
     unbounded retry loops in low-memory runtime environments.
     """
     errors = state.get("errors", [])
-    if errors:
+    has_context = bool((state.get("merged_context", "") or "").strip())
+    if errors and not has_context:
         return "fail"
     return "explanation"
 
@@ -303,7 +304,8 @@ def _route_after_explanation(state: GraphState) -> str:
     Fail fast to error handler when errors are present.
     """
     errors = state.get("errors", [])
-    if errors:
+    has_answer = bool((state.get("answer", "") or "").strip())
+    if errors and not has_answer:
         return "fail"
     return END
 

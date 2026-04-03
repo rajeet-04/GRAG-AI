@@ -106,6 +106,58 @@ class TestOllamaClient:
             assert "content" in result
             assert result["content"] == "Generated text"
 
+    @pytest.mark.asyncio
+    async def test_web_search_returns_results(self, client):
+        """Test web_search returns raw search payload."""
+        client.api_key = "test-key"
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "title": "Result 1",
+                    "url": "https://example.com",
+                    "content": "Snippet",
+                }
+            ]
+        }
+
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.__aexit__.return_value = None
+        mock_http_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("app.llm.ollama_client.httpx.AsyncClient", return_value=mock_http_client):
+            result = await client.web_search("latest ai", max_results=3)
+
+        assert "results" in result
+        assert len(result["results"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_web_fetch_returns_content(self, client):
+        """Test web_fetch returns fetched page payload."""
+        client.api_key = "test-key"
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "title": "Example",
+            "content": "Body",
+            "links": ["https://example.com"],
+        }
+
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.__aexit__.return_value = None
+        mock_http_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("app.llm.ollama_client.httpx.AsyncClient", return_value=mock_http_client):
+            result = await client.web_fetch("https://example.com")
+
+        assert result["title"] == "Example"
+        assert "content" in result
+
 
 class TestOllamaClientSingleton:
     """Tests for singleton pattern."""

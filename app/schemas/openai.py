@@ -4,7 +4,7 @@ Provides request/response models that match the OpenAI Chat API format
 for compatibility with OpenWebUI and other OpenAI API clients.
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -13,7 +13,7 @@ class ChatMessage(BaseModel):
     """Single message in a conversation."""
 
     role: str
-    content: str
+    content: str | list[dict[str, Any]] | dict[str, Any]
 
 
 class ChatCompletionRequest(BaseModel):
@@ -21,6 +21,7 @@ class ChatCompletionRequest(BaseModel):
 
     model: str
     messages: List[ChatMessage]
+    files: Optional[List[dict[str, Any]]] = None
     stream: bool = False
     temperature: Optional[float] = None
     top_p: Optional[float] = None

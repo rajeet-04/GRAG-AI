@@ -1,5 +1,6 @@
 """Integration tests for OpenAI-compatible API."""
 
+import base64
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -186,6 +187,104 @@ class TestOpenAIChatCompletions:
 
             # Should not return 422 (validation error)
             assert response.status_code == 200
+
+    def test_chat_completions_multimodal_image_payload(self):
+        """Multimodal content arrays from OpenWebUI should not return 422."""
+        encoded_image = base64.b64encode(b"fake-image-bytes").decode("ascii")
+        image_url = f"data:image/jpeg;base64,{encoded_image}"
+
+        with patch("app.api.openai.create_agent_graph") as mock_graph, patch(
+            "app.api.openai.preprocess_image_bytes",
+            return_value=(
+                b"processed-image",
+                {
+                    "processed_width": 1200,
+                    "processed_height": 900,
+                    "original_format": "JPEG",
+                },
+            ),
+        ), patch(
+            "app.api.openai.extract_text_from_image",
+            new=AsyncMock(return_value="Student Name: RAJEET ASH"),
+        ):
+            mock_state = {
+                "answer": "Parsed document details",
+                "reasoning_steps": [],
+                "mermaid_path": "",
+            }
+
+            mock_app = MagicMock()
+            mock_app.ainvoke = AsyncMock(return_value=mock_state)
+            mock_graph.return_value = mock_app
+
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "grag-pipeline-v1",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "extract marks"},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": image_url},
+                                },
+                            ],
+                        }
+                    ],
+                    "stream": False,
+                },
+            )
+
+            assert response.status_code == 200
+            state_arg = mock_app.ainvoke.await_args.args[0]
+            assert "RAJEET ASH" in state_arg["user_query"]
+            assert "Student Name" in state_arg["ingestion_text"]
+
+    def test_chat_completions_image_from_files_payload(self):
+        """Image attachments sent in top-level files[] should be processed."""
+        encoded_image = base64.b64encode(b"fake-image-bytes").decode("ascii")
+        image_url = f"data:image/png;base64,{encoded_image}"
+
+        with patch("app.api.openai.create_agent_graph") as mock_graph, patch(
+            "app.api.openai.preprocess_image_bytes",
+            return_value=(
+                b"processed-image",
+                {
+                    "processed_width": 1000,
+                    "processed_height": 700,
+                    "original_format": "PNG",
+                },
+            ),
+        ), patch(
+            "app.api.openai.extract_text_from_image",
+            new=AsyncMock(return_value="Name: RAJEET ASH"),
+        ):
+            mock_state = {
+                "answer": "Parsed from file attachment",
+                "reasoning_steps": [],
+                "mermaid_path": "",
+            }
+
+            mock_app = MagicMock()
+            mock_app.ainvoke = AsyncMock(return_value=mock_state)
+            mock_graph.return_value = mock_app
+
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "grag-pipeline-v1",
+                    "messages": [{"role": "user", "content": "#file:marksheet.jpg"}],
+                    "files": [{"type": "image", "url": image_url}],
+                    "stream": False,
+                },
+            )
+
+            assert response.status_code == 200
+            state_arg = mock_app.ainvoke.await_args.args[0]
+            assert "marksheet.jpg" in state_arg["user_query"]
+            assert "RAJEET ASH" in state_arg["ingestion_text"]
 
 
 class TestOpenAIAuthentication:

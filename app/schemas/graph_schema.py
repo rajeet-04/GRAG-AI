@@ -130,6 +130,8 @@ async def init_graph_schema() -> dict[str, Any]:
             "CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE",
             "CREATE CONSTRAINT entity_name IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE",
             "CREATE CONSTRAINT document_id IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE",
+            "CREATE CONSTRAINT document_chunk_id IF NOT EXISTS FOR (c:DocumentChunk) REQUIRE c.id IS UNIQUE",
+            "CREATE CONSTRAINT relation_fact_id IF NOT EXISTS FOR (rf:RelationFact) REQUIRE rf.id IS UNIQUE",
             "CREATE CONSTRAINT relation_id IF NOT EXISTS FOR ()-[r:RELATES_TO]->() REQUIRE r.id IS UNIQUE",
         ]
 
@@ -139,6 +141,9 @@ async def init_graph_schema() -> dict[str, Any]:
             "CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type)",
             "CREATE INDEX document_id IF NOT EXISTS FOR (d:Document) ON (d.id)",
             "CREATE INDEX document_source IF NOT EXISTS FOR (d:Document) ON (d.source)",
+            "CREATE INDEX document_chunk_index IF NOT EXISTS FOR (c:DocumentChunk) ON (c.chunk_index)",
+            "CREATE INDEX document_chunk_document_id IF NOT EXISTS FOR (c:DocumentChunk) ON (c.document_id)",
+            "CREATE INDEX relation_fact_type IF NOT EXISTS FOR (rf:RelationFact) ON (rf.type)",
             "CREATE INDEX relation_id IF NOT EXISTS FOR ()-[r:RELATES_TO]->() ON (r.id)",
             "CREATE INDEX relation_type IF NOT EXISTS FOR ()-[r:RELATES_TO]->() ON (r.type)",
             "CREATE INDEX relation_valid_from IF NOT EXISTS FOR ()-[r:RELATES_TO]->() ON (r.valid_from)",
