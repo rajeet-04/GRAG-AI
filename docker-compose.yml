@@ -34,9 +34,11 @@ services:
           memory: 1G
     restart: unless-stopped
 
-  # ── Ollama Local LLM — NVIDIA GPU ─────────────────────────────────────────
+  # ── Ollama Local LLM — NVIDIA GPU with GPU-Optimized Modelfile ────────────
   ollama:
-    image: ollama/ollama:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
     container_name: grag-ollama
     ports:
       - "11434:11434"
@@ -49,19 +51,20 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    runtime: nvidia
     healthcheck:
       # ollama/ollama image has no curl — use the ollama CLI to check readiness
       test: ["CMD", "ollama", "list"]
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 60s
     restart: unless-stopped
 
-  # ── Ollama Model Puller — runs once after Ollama starts ──────────────────
-  ollama-init:
+  # ── Embedding Model Puller — pulls nomic-embed-text after Ollama starts ───
+  embedding-init:
     image: ollama/ollama:latest
-    container_name: grag-ollama-init
+    container_name: grag-embedding-init
     volumes:
       - ollama_data:/root/.ollama
     depends_on:
@@ -70,12 +73,8 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
-    command: |
-      echo 'Waiting for Ollama...' &&
-      sleep 5 &&
-      ollama pull ${OLLAMA_MODEL:-qwen3.5:9b} &&
-      ollama pull ${EMBEDDING_MODEL:-nomic-embed-text} &&
-      echo 'All models ready.'
+    command:
+      - "echo 'Pulling embedding model...' && sleep 5 && ollama pull nomic-embed-text && printf '%s\\n' 'FROM nomic-embed-text' 'PARAMETER num_gpu 0' 'PARAMETER num_ctx 2048' > /tmp/EmbeddingModelfile && ollama create nomic-embed-cpu -f /tmp/EmbeddingModelfile && ollama list && echo 'Embedding model ready (CPU-pinned).'"
     restart: on-failure
 
   # ── GRAG FastAPI Pipeline ─────────────────────────────────────────────────
@@ -97,11 +96,17 @@ services:
       - NEO4J_USER=${NEO4J_USER:-neo4j}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:9b}
+      - OLLAMA_MODEL=grag-qwen
+      - OLLAMA_USE_CLOUD=${OLLAMA_USE_CLOUD:-false}
       - OLLAMA_CLOUD_URL=${OLLAMA_CLOUD_URL:-https://api.ollama.com/v1}
       - OLLAMA_CLOUD_MODEL=${OLLAMA_CLOUD_MODEL:-minimax-m2.7:cloud}
       - OLLAMA_CLOUD_API_KEY=${OLLAMA_CLOUD_API_KEY:-}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - QUERY_USE_CLOUD=${QUERY_USE_CLOUD:-true}
+      - QUERY_PARALLEL_LLM=${QUERY_PARALLEL_LLM:-true}
+      - QUERY_PARALLEL_TIMEOUT_SEC=${QUERY_PARALLEL_TIMEOUT_SEC:-25}
+      - QUERY_INTENT_MAX_TOKENS=${QUERY_INTENT_MAX_TOKENS:-220}
+      - QUERY_CYPHER_MAX_TOKENS=${QUERY_CYPHER_MAX_TOKENS:-360}
+      - EMBEDDING_MODEL=nomic-embed-cpu
       - CHROMADB_PATH=/data/chromadb
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -110,8 +115,8 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
+      embedding-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 20s

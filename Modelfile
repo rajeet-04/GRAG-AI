@@ -1,0 +1,14 @@
+# Base the new model on your current Qwen 3.5 9B
+FROM qwen3.5:9b
+
+# REDUCE CONTEXT: Capping at 6144 (6k) saves ~10GB+ VRAM vs the default 256k
+PARAMETER num_ctx 6144 
+
+# FORCE GPU: Tells Ollama to attempt to offload all layers to the GPU
+PARAMETER num_gpu 99
+
+# SYSTEM OVERHEAD: Ensures memory-mapped files are used for faster loading
+PARAMETER use_mmap true
+
+# OPTIONAL: You can add your own system prompt for your GRAG AI project here
+SYSTEM "You are a highly efficient AI assistant optimized for RAG and Graph-based data retrieval."

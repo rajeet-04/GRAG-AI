@@ -6,11 +6,12 @@ and Neo4j persistence.
 """
 
 import uuid
+from io import BytesIO
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 
@@ -138,18 +139,28 @@ async def ingest_document(
         # Extract relationships
         relations = await relation_service.extract_relations(request.text, entities)
 
+        # Preserve source details for traceability in Neo4j Document nodes
+        source = "api"
+        if request.options:
+            source = str(
+                request.options.get("source_file")
+                or request.options.get("source")
+                or "api"
+            )
+
         # Generate local document ID
         document_id = str(uuid.uuid4())
 
         # Write to Neo4j with temporal metadata
         neo4j_result = await graph_writer.write_ingestion_result(
-            request.text, entities, relations, source="api"
+            request.text, entities, relations, source=source
         )
 
         # Store result in local memory store
         result = {
             "document_id": document_id,
             "neo4j_document_id": neo4j_result.get("document_id"),
+            "source": source,
             "text": request.text,
             "text_length": len(request.text),
             "entities": entities,
@@ -204,6 +215,66 @@ async def ingest_document(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to process document: {str(e)}",
+        )
+
+
+@router.post("/file", response_model=IngestResponse)
+async def ingest_file(
+    request: Request,
+    filename: str,
+    source: str = "upload",
+    content_type: Optional[str] = None,
+    graph_writer=Depends(get_graph_writer),
+) -> IngestResponse:
+    """Ingest a raw-binary uploaded file.
+
+    Supports:
+    - PDF files (text extraction via pypdf)
+    - Plain text files (utf-8 decode)
+
+    Usage example:
+      POST /api/v1/ingest/file?filename=doc.pdf&source=openwebui
+      Body: binary file bytes
+      Header: Content-Type: application/pdf
+    """
+    if not filename.strip():
+        raise HTTPException(status_code=400, detail="filename query parameter is required")
+
+    req_content_type = content_type or request.headers.get("content-type", "")
+    req_content_type = req_content_type.lower()
+
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    try:
+        text: str
+        if filename.lower().endswith(".pdf") or "pdf" in req_content_type:
+            import pypdf
+
+            reader = pypdf.PdfReader(BytesIO(raw))
+            text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        else:
+            text = raw.decode("utf-8", errors="ignore")
+
+        if not text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="No extractable text found in uploaded file",
+            )
+
+        request = IngestRequest(
+            text=text,
+            options={"source": source, "source_file": filename, "content_type": req_content_type},
+        )
+        return await ingest_document(request=request, graph_writer=graph_writer)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("ingest.file.failed", filename=filename, error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to ingest file {filename}: {str(e)}",
         )
 
 

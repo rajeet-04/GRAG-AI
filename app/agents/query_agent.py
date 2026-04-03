@@ -4,16 +4,19 @@ Extracts search intent from natural language queries, generates Cypher
 queries for Neo4j knowledge graph traversal, and applies temporal filters
 based on query time context.
 
-Uses Ollama cloud for fast, scalable intent extraction.
+Uses configurable Ollama routing (local by default, cloud optional).
 """
 
 import json
+import asyncio
 import re
+from time import perf_counter
 from datetime import datetime
 from typing import Any
 
 import structlog
 
+from app.config import get_settings
 from app.llm.ollama_client import OllamaClient
 
 logger = structlog.get_logger()
@@ -59,6 +62,254 @@ Constraints:
 - Return meaningful columns: entity names, relation types, paths
 
 Respond with ONLY the Cypher query — no explanation, no markdown fences."""
+
+
+async def _chat_with_backend(
+    *,
+    backend: str,
+    client: OllamaClient,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+    think: bool,
+) -> dict[str, Any]:
+    """Execute one chat call and capture timing/health metadata."""
+    started = perf_counter()
+    try:
+        response = await client.chat(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            think=think,
+        )
+        content = (response.get("content") or "").strip()
+        if not content:
+            return {
+                "backend": backend,
+                "ok": False,
+                "error": "empty_content",
+                "duration_ms": round((perf_counter() - started) * 1000, 1),
+            }
+        return {
+            "backend": backend,
+            "ok": True,
+            "response": response,
+            "duration_ms": round((perf_counter() - started) * 1000, 1),
+        }
+    except Exception as e:
+        return {
+            "backend": backend,
+            "ok": False,
+            "error": str(e),
+            "duration_ms": round((perf_counter() - started) * 1000, 1),
+        }
+
+
+async def _query_llm_call(
+    *,
+    settings,
+    stage: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+    think: bool,
+) -> dict[str, Any]:
+    """Route query-stage LLM calls with local/cloud serial or parallel behavior.
+
+    Modes:
+    - Local only: QUERY_USE_CLOUD=false
+    - Serial: QUERY_USE_CLOUD=true, QUERY_PARALLEL_LLM=false (cloud primary, local fallback)
+    - Parallel race: QUERY_USE_CLOUD=true, QUERY_PARALLEL_LLM=true
+    """
+    local_client = OllamaClient(use_cloud=False)
+    cloud_enabled = bool(settings.query_use_cloud)
+    can_use_cloud = cloud_enabled and bool(settings.ollama_cloud_api_key)
+
+    if cloud_enabled and not can_use_cloud:
+        logger.warning(
+            "query_agent.cloud_unavailable",
+            stage=stage,
+            reason="missing OLLAMA_CLOUD_API_KEY",
+        )
+
+    # Local only mode
+    if not can_use_cloud:
+        result = await _chat_with_backend(
+            backend="local",
+            client=local_client,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            think=think,
+        )
+        if not result["ok"]:
+            raise RuntimeError(
+                f"{stage}: local call failed ({result.get('error', 'unknown')})"
+            )
+        logger.info(
+            "query_agent.llm_selected",
+            stage=stage,
+            mode="local_only",
+            backend="local",
+            duration_ms=result["duration_ms"],
+        )
+        return result["response"]
+
+    # Cloud+Local parallel race mode
+    if settings.query_parallel_llm:
+        cloud_client = OllamaClient(use_cloud=True)
+        timeout_s = max(float(settings.query_parallel_timeout_sec), 1.0)
+
+        logger.info(
+            "query_agent.parallel_race.start",
+            stage=stage,
+            timeout_sec=timeout_s,
+            local_model=local_client.model,
+            cloud_model=cloud_client.model,
+        )
+
+        tasks = {
+            asyncio.create_task(
+                _chat_with_backend(
+                    backend="local",
+                    client=local_client,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    think=think,
+                )
+            ),
+            asyncio.create_task(
+                _chat_with_backend(
+                    backend="cloud",
+                    client=cloud_client,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    think=think,
+                )
+            ),
+        }
+
+        deadline = perf_counter() + timeout_s
+        failures: list[dict[str, Any]] = []
+
+        while tasks and perf_counter() < deadline:
+            remaining = max(deadline - perf_counter(), 0.05)
+            done, pending = await asyncio.wait(
+                tasks,
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if not done:
+                break
+
+            for task in done:
+                result = task.result()
+                if result.get("ok") and result.get("response", {}).get("content", ""):
+                    for p in pending:
+                        p.cancel()
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+
+                    logger.info(
+                        "query_agent.llm_selected",
+                        stage=stage,
+                        mode="parallel_race",
+                        backend=result["backend"],
+                        duration_ms=result["duration_ms"],
+                    )
+                    return result["response"]
+
+                failures.append(result)
+                logger.warning(
+                    "query_agent.parallel_race.backend_failed",
+                    stage=stage,
+                    backend=result.get("backend"),
+                    error=result.get("error"),
+                    duration_ms=result.get("duration_ms"),
+                )
+
+            tasks = pending
+
+        # Cleanup any remaining tasks
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Fallback to deterministic local retry if race returned no usable content
+        local_retry = await _chat_with_backend(
+            backend="local",
+            client=local_client,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            think=think,
+        )
+        if local_retry["ok"]:
+            logger.info(
+                "query_agent.llm_selected",
+                stage=stage,
+                mode="parallel_race_fallback_local",
+                backend="local",
+                duration_ms=local_retry["duration_ms"],
+            )
+            return local_retry["response"]
+
+        raise RuntimeError(
+            f"{stage}: parallel race failed; failures={len(failures) + 1}"
+        )
+
+    # Serial mode: cloud primary, local fallback
+    cloud_client = OllamaClient(use_cloud=True)
+    logger.info(
+        "query_agent.serial.start",
+        stage=stage,
+        primary_backend="cloud",
+        fallback_backend="local",
+        cloud_model=cloud_client.model,
+        local_model=local_client.model,
+    )
+    cloud_result = await _chat_with_backend(
+        backend="cloud",
+        client=cloud_client,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        think=think,
+    )
+    if cloud_result["ok"] and cloud_result.get("response", {}).get("content", ""):
+        logger.info(
+            "query_agent.llm_selected",
+            stage=stage,
+            mode="serial_cloud_primary",
+            backend="cloud",
+            duration_ms=cloud_result["duration_ms"],
+        )
+        return cloud_result["response"]
+
+    local_result = await _chat_with_backend(
+        backend="local",
+        client=local_client,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        think=think,
+    )
+    if local_result["ok"]:
+        logger.warning(
+            "query_agent.serial_cloud_failed_local_used",
+            stage=stage,
+            cloud_error=cloud_result.get("error"),
+            local_duration_ms=local_result["duration_ms"],
+        )
+        return local_result["response"]
+
+    raise RuntimeError(
+        f"{stage}: cloud and local failed (cloud={cloud_result.get('error')}, local={local_result.get('error')})"
+    )
 
 
 def _parse_json_response(response: str) -> dict[str, Any]:
@@ -235,12 +486,26 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     logger.info("query_agent.starting", query=user_query[:200])
-    ollama = OllamaClient(use_cloud=True)
+    settings = get_settings()
+    logger.info(
+        "query_agent.routing",
+        mode=(
+            "parallel_race"
+            if settings.query_use_cloud and settings.query_parallel_llm
+            else "serial_cloud_primary"
+            if settings.query_use_cloud
+            else "local_only"
+        ),
+        query_use_cloud=settings.query_use_cloud,
+        query_parallel_llm=settings.query_parallel_llm,
+    )
 
     try:
-        # Step 1: Extract intent using local Ollama
+        # Step 1: Extract intent
         intent_prompt = INTENT_EXTRACTION_PROMPT.format(query=user_query)
-        intent_response = await ollama.chat(
+        intent_response = await _query_llm_call(
+            settings=settings,
+            stage="intent",
             messages=[
                 {
                     "role": "system",
@@ -253,7 +518,7 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
                 {"role": "user", "content": intent_prompt},
             ],
             temperature=0.1,
-            max_tokens=512,
+            max_tokens=settings.query_intent_max_tokens,
             think=False,  # JSON output — disable thinking trace
         )
 
@@ -287,7 +552,9 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
             temporal_filters=json.dumps(llm_temporal, default=str),
             entity_types=json.dumps(entity_types),
         )
-        cypher_response = await ollama.chat(
+        cypher_response = await _query_llm_call(
+            settings=settings,
+            stage="cypher",
             messages=[
                 {
                     "role": "system",
@@ -299,7 +566,7 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
                 {"role": "user", "content": cypher_prompt},
             ],
             temperature=0.1,
-            max_tokens=1024,
+            max_tokens=settings.query_cypher_max_tokens,
             think=False,  # Cypher output — disable thinking trace
         )
 

@@ -30,6 +30,18 @@ from app.config import get_settings
 logger = structlog.get_logger()
 
 
+def _normalize_ollama_url(url: str) -> str:
+    """Normalize Ollama base URLs to the root API host.
+
+    Cloud examples often include a /v1 suffix from OpenAI-compatible docs,
+    but this client targets Ollama native endpoints (/api/chat, /api/generate).
+    """
+    normalized = url.strip().rstrip("/")
+    if normalized.endswith("/v1"):
+        normalized = normalized[:-3]
+    return normalized
+
+
 class OllamaClient:
     """
     Async client for Ollama API (local Docker or ollama.com cloud).
@@ -57,12 +69,14 @@ class OllamaClient:
 
         if use_cloud:
             # Cloud: https://ollama.com  (native /api/chat, not OpenAI-compat)
-            self.base_url = base_url or "https://ollama.com"
+            cloud_url = base_url or self.settings.ollama_cloud_url or "https://ollama.com"
+            self.base_url = _normalize_ollama_url(cloud_url)
             self.model = model or self.settings.ollama_cloud_model
             self.api_key = api_key or self.settings.ollama_cloud_api_key
         else:
             # Local Docker: http://ollama:11434
-            self.base_url = base_url or self.settings.ollama_base_url
+            local_url = base_url or self.settings.ollama_base_url
+            self.base_url = _normalize_ollama_url(local_url)
             self.model = model or self.settings.ollama_model
             self.api_key = api_key or getattr(self.settings, "ollama_api_key", None)
 

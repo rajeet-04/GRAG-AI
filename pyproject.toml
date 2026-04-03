@@ -22,4 +22,5 @@ dependencies = [
     "ollama>=0.2.0",
     "graphiti-core>=0.2.0",
     "jellyfish>=0.9.0",
+    "pypdf>=4.2.0",
 ]

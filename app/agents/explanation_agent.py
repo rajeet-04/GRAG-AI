@@ -7,8 +7,8 @@ paths and merged context. Produces a strict three-section Markdown format:
 2. Step-by-Step Reasoning Path (A -> B -> C)
 3. Mermaid.js diagram of graph traversal
 
-Uses cloud Ollama model (qwen2.5:14b-q4_k_m) for large context handling
-without OOM crashes on 8GB VRAM systems.
+Uses configurable Ollama routing for explanation generation.
+Local mode is the default for GPU-backed on-device inference.
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ import re
 from typing import Any
 
 import structlog
+
+from app.config import get_settings
 
 logger = structlog.get_logger()
 
@@ -163,10 +165,10 @@ def parse_three_section_response(response: str) -> dict[str, Any]:
 
 
 def _build_llm():
-    """Use lightweight cloud client path for explanation generation.
+    """Use lightweight async client path for explanation generation.
 
     Returning None here forces explanation_agent_node to use the project's
-    async OllamaClient(use_cloud=True), which is more memory efficient in
+    async OllamaClient routing logic, which is more memory efficient in
     constrained Docker environments.
     """
     return None
@@ -367,15 +369,15 @@ def build_explanation_prompt(state: dict[str, Any]) -> tuple[str, str]:
 
 
 async def stream_explanation(state: dict[str, Any]):
-    """Async generator — streams explanation tokens from Ollama cloud.
+    """Async generator — streams explanation tokens from Ollama.
 
     This is the true streaming path used by openai.py when stream=True.
     Tokens are yielded as they arrive from Ollama so Open WebUI renders
     text in real-time rather than waiting for the entire response.
 
     Strategy:
-    - Try cloud (minimax-m2.7:cloud) first
-    - Fall back to local (qwen3.5:9b) if cloud fails
+    - Local mode (default): local only
+    - Cloud mode: cloud first, local fallback
 
     Args:
         state: Pipeline state after context_builder has run
@@ -391,20 +393,33 @@ async def stream_explanation(state: dict[str, Any]):
         {"role": "user", "content": user_msg},
     ]
 
-    try:
-        client = OllamaClient(use_cloud=True)
-        async for chunk in client.chat_stream(messages=messages, temperature=0.3, max_tokens=4096):
-            yield chunk
-    except Exception as cloud_err:
-        logger.warning("stream_explanation.cloud_failed", error=str(cloud_err))
-        # Fall back to local
+    settings = get_settings()
+
+    if settings.ollama_use_cloud:
         try:
-            local_client = OllamaClient(use_cloud=False)
-            async for chunk in local_client.chat_stream(messages=messages, temperature=0.3, max_tokens=2048):
+            client = OllamaClient(use_cloud=True)
+            async for chunk in client.chat_stream(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=4096,
+            ):
                 yield chunk
-        except Exception as local_err:
-            logger.error("stream_explanation.local_failed", error=str(local_err))
-            yield "\n\n[Error generating response. Please try again.]"
+            return
+        except Exception as cloud_err:
+            logger.warning("stream_explanation.cloud_failed", error=str(cloud_err))
+
+    # Local mode (or cloud fallback)
+    try:
+        local_client = OllamaClient(use_cloud=False)
+        async for chunk in local_client.chat_stream(
+            messages=messages,
+            temperature=0.3,
+            max_tokens=2048,
+        ):
+            yield chunk
+    except Exception as local_err:
+        logger.error("stream_explanation.local_failed", error=str(local_err))
+        yield "\n\n[Error generating response. Please try again.]"
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +431,7 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     """LangGraph node function for the Explanation Agent.
 
     Reads merged_context, kr_paths, and confidence_scores from state.
-    Invokes the cloud LLM to produce three-section xAI output:
+    Invokes Ollama to produce three-section xAI output:
     answer, reasoning_steps, mermaid_path.
 
     Args:
@@ -474,27 +489,31 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     else:
         from app.llm.ollama_client import OllamaClient
 
-        # Try cloud first, fall back to local if cloud fails
+        settings = get_settings()
         raw_text = ""
-        try:
-            logger.info("explanation_agent.using", backend="ollama_client_cloud")
-            cloud_client = OllamaClient(use_cloud=True)
-            result = await cloud_client.chat(
-                messages=[
-                    {"role": "system", "content": EXPLANATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0.3,
-                max_tokens=4096,
-            )
-            raw_text = result.get("content", "")
-            logger.info("explanation_agent.cloud_success", content_length=len(raw_text))
-        except Exception as cloud_err:
-            logger.warning(
-                "explanation_agent.cloud_failed_using_local",
-                error=str(cloud_err),
-            )
-            # Fall back to local Ollama (qwen3.5:9b)
+
+        if settings.ollama_use_cloud:
+            try:
+                logger.info("explanation_agent.using", backend="ollama_client_cloud")
+                cloud_client = OllamaClient(use_cloud=True)
+                result = await cloud_client.chat(
+                    messages=[
+                        {"role": "system", "content": EXPLANATION_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    temperature=0.3,
+                    max_tokens=4096,
+                )
+                raw_text = result.get("content", "")
+                logger.info("explanation_agent.cloud_success", content_length=len(raw_text))
+            except Exception as cloud_err:
+                logger.warning(
+                    "explanation_agent.cloud_failed_using_local",
+                    error=str(cloud_err),
+                )
+
+        if not raw_text:
+            logger.info("explanation_agent.using", backend="ollama_client_local")
             local_client = OllamaClient(use_cloud=False)
             result = await local_client.chat(
                 messages=[
@@ -505,7 +524,7 @@ async def explanation_agent_node(state: dict[str, Any]) -> dict[str, Any]:
                 max_tokens=2048,
             )
             raw_text = result.get("content", "")
-            logger.info("explanation_agent.local_fallback_success", content_length=len(raw_text))
+            logger.info("explanation_agent.local_success", content_length=len(raw_text))
 
     # Parse three-section response
     parsed = parse_three_section_response(raw_text)

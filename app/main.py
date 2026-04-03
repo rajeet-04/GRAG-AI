@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
         log_level=settings.log_level,
         neo4j_uri=settings.neo4j_uri,
         ollama_url=settings.ollama_base_url,
+        ollama_use_cloud=settings.ollama_use_cloud,
     )
 
     from app.database.neo4j_client import get_neo4j_client

@@ -40,6 +40,20 @@ class Settings(BaseSettings):
     ollama_cloud_api_key: Optional[str] = Field(
         default=None, alias="OLLAMA_CLOUD_API_KEY"
     )
+    ollama_use_cloud: bool = Field(default=False, alias="OLLAMA_USE_CLOUD")
+
+    # Query Agent LLM Routing and Token Budgets
+    query_use_cloud: bool = Field(default=False, alias="QUERY_USE_CLOUD")
+    query_parallel_llm: bool = Field(default=False, alias="QUERY_PARALLEL_LLM")
+    query_parallel_timeout_sec: float = Field(
+        default=25.0, alias="QUERY_PARALLEL_TIMEOUT_SEC"
+    )
+    query_intent_max_tokens: int = Field(
+        default=256, alias="QUERY_INTENT_MAX_TOKENS"
+    )
+    query_cypher_max_tokens: int = Field(
+        default=384, alias="QUERY_CYPHER_MAX_TOKENS"
+    )
 
     # Embedding Model
     embedding_model: str = Field(default="nomic-embed-text", alias="EMBEDDING_MODEL")
