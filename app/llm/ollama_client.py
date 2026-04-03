@@ -95,7 +95,7 @@ class OllamaClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=180.0,
+                timeout=max(5.0, float(self.settings.ollama_request_timeout_sec)),
                 headers=self._get_headers(),
             )
         return self._client
@@ -165,7 +165,11 @@ class OllamaClient:
             },
             "think": think,
             "stream": stream,
+            "keep_alive": self.settings.ollama_keep_alive,
         }
+
+        if not self.use_cloud:
+            payload["options"]["num_gpu"] = int(self.settings.ollama_num_gpu)
 
         try:
             logger.info(
@@ -239,7 +243,11 @@ class OllamaClient:
             },
             "think": think,
             "stream": True,
+            "keep_alive": self.settings.ollama_keep_alive,
         }
+
+        if not self.use_cloud:
+            payload["options"]["num_gpu"] = int(self.settings.ollama_num_gpu)
 
         client = await self._get_client()
 
@@ -297,7 +305,11 @@ class OllamaClient:
             },
             "think": think,
             "stream": False,
+            "keep_alive": self.settings.ollama_keep_alive,
         }
+
+        if not self.use_cloud:
+            payload["options"]["num_gpu"] = int(self.settings.ollama_num_gpu)
 
         if system:
             payload["system"] = system

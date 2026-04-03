@@ -27,8 +27,14 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(
         default="http://localhost:11434", alias="OLLAMA_BASE_URL"
     )
-    ollama_model: str = Field(default="qwen3.5:9b", alias="OLLAMA_MODEL")
+    ollama_model: str = Field(default="qwen3.5:4b", alias="OLLAMA_MODEL")
     ollama_api_key: Optional[str] = Field(default=None, alias="OLLAMA_API_KEY")
+    ollama_num_gpu: int = Field(default=99, alias="OLLAMA_NUM_GPU")
+    ollama_keep_alive: str = Field(default="24h", alias="OLLAMA_KEEP_ALIVE")
+    ollama_request_timeout_sec: float = Field(
+        default=120.0,
+        alias="OLLAMA_REQUEST_TIMEOUT_SEC",
+    )
 
     # Ollama Cloud Configuration (Context Builder, Explanation Agent)
     ollama_cloud_url: str = Field(
@@ -46,17 +52,55 @@ class Settings(BaseSettings):
     query_use_cloud: bool = Field(default=False, alias="QUERY_USE_CLOUD")
     query_parallel_llm: bool = Field(default=False, alias="QUERY_PARALLEL_LLM")
     query_parallel_timeout_sec: float = Field(
-        default=25.0, alias="QUERY_PARALLEL_TIMEOUT_SEC"
+        default=10.0, alias="QUERY_PARALLEL_TIMEOUT_SEC"
     )
     query_intent_max_tokens: int = Field(
-        default=256, alias="QUERY_INTENT_MAX_TOKENS"
+        default=200, alias="QUERY_INTENT_MAX_TOKENS"
     )
     query_cypher_max_tokens: int = Field(
-        default=384, alias="QUERY_CYPHER_MAX_TOKENS"
+        default=320, alias="QUERY_CYPHER_MAX_TOKENS"
+    )
+    query_intent_timeout_sec: float = Field(
+        default=8.0,
+        alias="QUERY_INTENT_TIMEOUT_SEC",
+    )
+    query_cypher_timeout_sec: float = Field(
+        default=12.0,
+        alias="QUERY_CYPHER_TIMEOUT_SEC",
+    )
+    query_enable_warmup: bool = Field(default=True, alias="QUERY_ENABLE_WARMUP")
+    query_warmup_timeout_sec: float = Field(
+        default=20.0,
+        alias="QUERY_WARMUP_TIMEOUT_SEC",
     )
 
     # Embedding Model
-    embedding_model: str = Field(default="nomic-embed-text", alias="EMBEDDING_MODEL")
+    embedding_model: str = Field(
+        default="qwen3-embedding:0.6b",
+        alias="EMBEDDING_MODEL",
+    )
+
+    # Ingestion extraction tuning
+    ingestion_min_chunking_chars: int = Field(
+        default=2500,
+        alias="INGESTION_MIN_CHUNKING_CHARS",
+    )
+    ingestion_chunk_size_chars: int = Field(
+        default=2200,
+        alias="INGESTION_CHUNK_SIZE_CHARS",
+    )
+    ingestion_chunk_overlap_chars: int = Field(
+        default=220,
+        alias="INGESTION_CHUNK_OVERLAP_CHARS",
+    )
+    ingestion_chunk_parallelism: int = Field(
+        default=4,
+        alias="INGESTION_CHUNK_PARALLELISM",
+    )
+    ingestion_relation_global_pass: bool = Field(
+        default=True,
+        alias="INGESTION_RELATION_GLOBAL_PASS",
+    )
 
     # ChromaDB Configuration
     chromadb_path: Path = Field(default=Path("./data/chromadb"), alias="CHROMADB_PATH")

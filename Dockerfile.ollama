@@ -1,16 +1,8 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Ollama Dockerfile with GPU-optimized Modelfile
-# Builds custom Qwen 3.5 model with GPU acceleration and optimized context window
-# ─────────────────────────────────────────────────────────────────────────────
-
 FROM ollama/ollama:latest
-
-# Copy the optimized Modelfile
-COPY Modelfile /tmp/Modelfile
 
 # Set Ollama host to allow external connections
 ENV OLLAMA_HOST=0.0.0.0:11434
 
-# Create model on startup (runs when container starts)
+# Run Ollama service; model pulls/warmups are handled by compose init stages.
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["ollama serve & sleep 5 && ollama create grag-qwen -f /tmp/Modelfile && wait"]
+CMD ["ollama serve"]

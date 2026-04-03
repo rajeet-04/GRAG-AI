@@ -8,6 +8,7 @@ and Neo4j persistence.
 import uuid
 from io import BytesIO
 from datetime import datetime
+import re
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -90,6 +91,33 @@ _document_store: Dict[str, Dict[str, Any]] = {}
 
 # Create router
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
+
+
+def _clean_extracted_text(text: str) -> str:
+    """Normalize extracted text while preserving semantic boundaries."""
+    if not text:
+        return ""
+
+    cleaned = text.replace("\x00", " ").replace("\r", "\n")
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def _extract_pdf_text(raw: bytes) -> str:
+    """Extract PDF text with per-page boundaries for downstream chunking."""
+    import pypdf
+
+    reader = pypdf.PdfReader(BytesIO(raw))
+    page_blocks: List[str] = []
+
+    for idx, page in enumerate(reader.pages, start=1):
+        page_text = _clean_extracted_text(page.extract_text() or "")
+        if not page_text:
+            continue
+        page_blocks.append(f"[Page {idx}]\n{page_text}")
+
+    return "\n\n".join(page_blocks).strip()
 
 
 def get_graph_writer():
@@ -250,12 +278,9 @@ async def ingest_file(
     try:
         text: str
         if filename.lower().endswith(".pdf") or "pdf" in req_content_type:
-            import pypdf
-
-            reader = pypdf.PdfReader(BytesIO(raw))
-            text = "\n".join((page.extract_text() or "") for page in reader.pages)
+            text = _extract_pdf_text(raw)
         else:
-            text = raw.decode("utf-8", errors="ignore")
+            text = _clean_extracted_text(raw.decode("utf-8", errors="ignore"))
 
         if not text.strip():
             raise HTTPException(

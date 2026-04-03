@@ -45,7 +45,7 @@ class EmbeddingService:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=60.0,
+                timeout=max(5.0, float(self.settings.ollama_request_timeout_sec)),
                 headers=self._get_headers(),
             )
         return self._client
@@ -69,6 +69,10 @@ class EmbeddingService:
         payload = {
             "model": self.model,
             "prompt": text,
+            "options": {
+                "num_gpu": int(self.settings.ollama_num_gpu),
+            },
+            "keep_alive": self.settings.ollama_keep_alive,
         }
 
         try:

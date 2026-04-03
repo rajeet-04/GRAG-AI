@@ -1,0 +1,648 @@
+﻿[
+  {
+    "n": {
+      "identity": 0,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-02T12:28:39.902000000Z",
+        "id": "6cec9ef4-d47a-47dc-92a1-d3092782adda",
+        "source": "api",
+        "content": "Elon Musk founded xAI in 2023. xAI created Grok."
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:0"
+    }
+  },
+  {
+    "n": {
+      "identity": 1,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-02T12:30:39.656000000Z",
+        "id": "67ebb26d-de0d-4b38-860c-e5506354d774",
+        "source": "api",
+        "content": "Elon Musk founded xAI in 2023. xAI created Grok."
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:1"
+    }
+  },
+  {
+    "n": {
+      "identity": 2,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-02T12:32:51.208000000Z",
+        "id": "957bb077-00ee-4cf9-a270-1c76f9037034",
+        "source": "api",
+        "content": "Elon Musk founded xAI in 2023. xAI created Grok."
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:2"
+    }
+  },
+  {
+    "n": {
+      "identity": 3,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-02T12:37:03.666000000Z",
+        "id": "726244fe-70c9-41c1-9c83-0b943326e04e",
+        "source": "api",
+        "content": "Elon Musk founded xAI in 2023. xAI created Grok."
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:3"
+    }
+  },
+  {
+    "n": {
+      "identity": 4,
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "updated_at": "2026-04-02T12:37:04.050000000Z",
+        "name": "Elon Musk",
+        "description": "CEO and founder of SpaceX and Tesla",
+        "created_at": "2026-04-02T12:37:04.050000000Z",
+        "id": "96cd8a01-1765-48e5-a861-7575cfcd1410",
+        "type": "Person"
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:4"
+    }
+  },
+  {
+    "n": {
+      "identity": 5,
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "updated_at": "2026-04-02T12:37:04.717000000Z",
+        "name": "Tesla",
+        "created_at": "2026-04-02T12:37:04.717000000Z",
+        "description": "Electric vehicle and clean energy company",
+        "id": "7caf52be-ad15-497a-ad8d-854f7b01c544",
+        "type": "Organization"
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:5"
+    }
+  },
+  {
+    "n": {
+      "identity": 6,
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "updated_at": "2026-04-02T12:37:04.855000000Z",
+        "name": "2023",
+        "description": "Year xAI was founded",
+        "created_at": "2026-04-02T12:37:04.855000000Z",
+        "id": "f9f89010-57ba-4bb0-a273-02e971c821fd",
+        "type": "Event"
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:6"
+    }
+  },
+  {
+    "n": {
+      "identity": 7,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-02T12:48:45.830000000Z",
+        "id": "ea7456c7-bbca-40fa-bd04-82295ff1ae91",
+        "source": "api",
+        "content": "Elon Musk founded xAI in 2023. xAI created Grok."
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:7"
+    }
+  },
+  {
+    "n": {
+      "identity": 8,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-02T14:02:12.472000000Z",
+        "id": "8e92e5ae-a2bb-4036-b7f8-1634289d7943",
+        "source": "api",
+        "content": "Rajeet Ash
+Kolkata,India•919330515069•rajeetash@hotmail.com•LinkedIn•Github•Portfolio
+Robotics and Artificial Intelligence undergraduate with experience in full-stack systems, AI pipelines, and real-
+time architectures. Strong focus on scalable backend systems, optimization algorithms, and production-ready
+engineering.
+TECHNICALSKILLS
+Programming: Kotlin,Python,JavaScript,TypeScript,C,C,Java,SQL
+AI/MLLangChain(langchain-community),GoogleGemini,Ollama,NLPPipelines,cuDNN,OmniVerse
+Web&Backend: Node.js,Express.js,Flask,RESTAPIs,WebSockets,BullMQ,Redis
+Frontend: React,Next.js,TailwindCSS,Vite
+Database&Systems: PostgreSQL,SQLite,Neo4jGraphDB,Supabase
+Cloud&Tools: GCP,AzureStorage,Git,HuggingFace
+Robotics: ROS2,GeminiRobotics-ER
+EXPERIENCE
+WebDevelopmentLead Mar2026–Present
+Ureckon,UEMKolkata
+• Leadingfull-stackdevelopmentandmentoringteammembers.
+WebDeveloper Dec2025–Mar2026
+UniversityofEngineeringandManagement
+• Developedandmaintaineduniversitywebapplications.
+WebDevLead&Co-LeadOrganizer Sep2025–Present
+TechnologiaHackathon,UEMKolkata
+• Leddevelopmentandorganizationoflarge-scalehackathons.
+ReactNativeDeveloperIntern May2025–Jun2025
+Smile2StepsResearchProject
+• BuiltmobilecomponentsandintegratedbackendAPIs.
+PROJECTS
+JUKE-AndroidMusicStreamingApplication
+• Builtoffline-firstmusicstreamingappwithrecommendationsystem.
+• ImplementedMVVMarchitectureandlocalcaching.
+WAVES-Real-TimeTidalPredictionSystem
+• DevelopedAndroidappfortidalpredictionwithPythondatapipelines.
+• Designedbackend-to-mobiledataflowandcaching.
+BizChat-AIPoweredBusinessCommunicationPlatform
+• BuiltAIsystemtoextractstructuredorderdatafromchatandvoiceinputs.
+• DesignedasyncarchitectureusingRedisandBullMQ.
+• IntegratedLLMsGemini,Ollama)forprocessingandsummarization.
+• Implementedreal-timeupdatesandautomatedinvoicegeneration.
+ClassroomManagementSystem
+• BuiltLMSwithauthenticationandrole-basedaccesscontrol.
+• DesignedRESTAPIsandasyncprocessing.
+RESEARCH
+BEPSAlgorithm-RenewableEnergyDataProcessing
+• Designedentropy-basedsortingachieving2.67xspeedimprovementoverC.
+PSOOptimizedRoboticArm
+• SolvedinversekinematicsusingParticleSwarmOptimization.
+•
+Achieved10−12
+simulationaccuracyandhardwarevalidation.
+1
+ACHIEVEMENTS
+• ViceChancellor’sAward-BestScientificMind2024–2025
+• Top100Finalist-NationalCodingLeague17,000teams)
+EDUCATION
+B.TechinRoboticsandArtificialIntelligence 2024–2028
+UniversityofEngineeringandManagement,Kolkata
+CGPA8.9/10
+ClassXIIISC 2023
+Score: 90% | ComputerScience: 98%
+ClassXICSE 2021
+Score: 92.7%
+2"
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:8"
+    }
+  },
+  {
+    "n": {
+      "identity": 9,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-03T04:35:50.678000000Z",
+        "id": "5f85c2a6-9f2c-4072-a6ca-2f14522bec9e",
+        "source": "api",
+        "content": " 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Assignment 12 
+Suggested Solutions 
+ 
+ 
+Contributors: 
+Raymond W. Yeung 
+Ning Cai 
+Terence H. Chan 
+Siu Wai Ho 
+Shenghao Yang 
+Zhixue Zhang 
+ 
+Copyright ©2014 by Raymond W. Yeung 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Chapter 10 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+8 CHAPTER 10. DIFFERENTIAL ENTROPY
+6. Prove Theorem 10.19.
+Solution:
+Let Y =AX. Then
+fY(y) = 1
+| det(A)|fX(A−1y).
+Letting x =A−1y in (10.50), we have
+h(X) = −
+∫
+SX
+fX(x) logfX(x)dx
+= −
+∫
+SY
+1
+| det(A)|fX(A−1y) logfX(A−1y)dy.
+The rest are the same as in the proof of Theorem 10.15.
+9
+7. For continuous random variablesX andY , discuss whyI(X;X) is not
+equal to h(X).
+Solution:
+ForX be a continuous random variable such thath(X)<∞. Consider
+H( ˆX∆) = −
+∑
+i
+Pr{ ˆX∆ =i} log Pr{ ˆX∆ =i}
+≈
+∑
+i
+f(xi)∆ log(f(xi)∆)
+= −
+∑
+i
+f(xi)∆(logf(xi) + log ∆)
+= −
+∑
+i
+(f(xi) logf(xi))∆− (log ∆)
+∑
+i
+f(xi)∆
+≈ h(X)− (log ∆)
+∫
+f(x)dx
+= h(X)− log ∆.
+Therefore, H( ˆX∆)→∞ as ∆→ 0. Now consider
+I(X;X)≈I( ˆX∆; ˆX∆) =H( ˆX∆)→∞
+as ∆→ 0. This shows that I(X;X) cannot be the same as h(X).
+10 CHAPTER 10. DIFFERENTIAL ENTROPY
+8. Each of the following continuous distributions can be obtained as the
+distribution that maximizes the diﬀerential entropy subject to a suit-
+able set of constraints:
+(a) the exponential distribution,
+f(x) =λe−λx
+for x≥ 0, where λ> 0;
+(b) the Laplace distribution,
+f(x) = 1
+2λe−λ|x|
+for−∞<x< ∞, where λ> 0;
+(c) the gamma distribution,
+f(x) = λ
+Γ(α)(λx)α−1e−λx
+for x≥ 0, where λ,α> 0 and Γ(z) =
+∫∞
+0 tz−1e−tdt;
+(d) the beta distribution,
+f(x) = Γ(p +q)
+Γ(p)Γ(q)xp−1(1−x)q−1
+for 0≤x≤ 1 , where p,q >0;
+(e) the Cauchy distribution,
+f(x) = 1
+π(1 +x2)
+for−∞<x< ∞.
+Identify the corresponding set of constraints for each of these distri-
+butions.
+Solution:
+The solutions are obtained through applications of Corollary 10.42,
+which can be rephrased as follows. Let f∗ be any pdf deﬁned on ℜn
+and suppose for all x∈S f∗
+logf∗(x) =−λ0−
+m∑
+i=1
+λiri(x),
+11
+or
+f∗(x) =elogf(x) =e−λ0−
+∑m
+i=1λiri(x).
+LetS =Sf∗. Then Corollary 10.42 says that f∗(x) maximizes h(f)
+over all pdf f deﬁned onSf∗, subject to the constraints
+Ef[ri(X)] =Ef∗[ri(X)]
+for 1≤i≤m.
+We now give the solution to Part (c), the gamma distribution. For
+x≥ 0, write
+f(x) = λα
+Γ(α)xα−1e−λx.
+Then
+logf(x) = log λα
+Γ(α) + (α− 1) logx−λx.
+By Corollary 10.42,f(x) maximizesh(f) over all pdfg deﬁned onℜ+,
+subject to the constraints
+Eg[logX] =Ef[logX]
+and
+Eg[X] =Ef[X].
+12 CHAPTER 10. DIFFERENTIAL ENTROPY
+9. Let µ be the mean of a continuous random variable X deﬁned onℜ+.
+Obtain an upper bound on h(X) in terms of µ.
+Solution:
+Let Y be exponentially distributed with parameter λ, i.e.,
+f(y) =λe−λy, y ≥ 0.
+Then EY =µ =λ−1. Letting e as the base of the logarithm, we have
+h(Y ) = −
+∫ ∞
+y=0
+f(y) lnf(y)dy
+= −
+∫ ∞
+y=0
+f(y)(lnλ−λy)dy
+= − lnλ +λµ
+= ln µ + 1.
+Then by Theorem 10.41, for any continuous random variableX deﬁned
+onℜ+, we have
+h(X)≤h(Y ) = lnµ + 1.
+For a general base of the logarithm, we have
+h(X)≤ logµ + loge.
+15
+12. Hadamard’s inequality Show that for a positive semideﬁnite matrix
+K,|K|≤ ∏n
+i=1Kii, with equality if and only if K is diagonal. Hint:
+Consider the diﬀerential entropy of a multivariate Gaussian distribu-
+tion.
+Solution:
+Let X∼N (0,K ). Then
+h(X) = 1
+2 log(2πe|K|)
+and
+h(Xi) = 1
+2 log(2πeKii).
+Then substitute the above into the inequality
+h(X)≤
+∑
+i
+h(Xi)
+to obtain the desired result.
+13. Let KX and ˜KX be the covariance matrix and the correlation matrix
+of a random vector X, respectively. Show that |KX|≤| ˜KX|. This
+is a generalization of var X≤ EX 2 for a random variable X. Hint:
+Consider a multivariate Gaussian distribution with another multivari-
+ate Gaussian distribution with zero mean and the same correlation
+matrix.
+Solution:
+Let X∼ N(m,KX) and X′ ∼ N(0, ˜KX). Since X′ is zero mean,
+˜KX′ = KX′ = ˜KX, i.e., X and X′ have the same correlation matrix.
+Then by Theorem 10.45, we have
+1
+2 log(2πe|KX|) =h(X)≤h(X′) = 1
+2 log(2πe|KX′|) = 1
+2 log(2πe| ˜KX|),
+or|KX|≤| ˜KX|."
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:9"
+    }
+  },
+  {
+    "n": {
+      "identity": 10,
+      "labels": [
+        "Document"
+      ],
+      "properties": {
+        "chunk_index": 0,
+        "created_at": "2026-04-03T04:38:54.810000000Z",
+        "id": "43ef4a71-6e91-4b32-9068-ee4f99f2822a",
+        "source": "A12_solutions_6237948795.pdf",
+        "content": " 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Assignment 12 
+Suggested Solutions 
+ 
+ 
+Contributors: 
+Raymond W. Yeung 
+Ning Cai 
+Terence H. Chan 
+Siu Wai Ho 
+Shenghao Yang 
+Zhixue Zhang 
+ 
+Copyright ©2014 by Raymond W. Yeung 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Chapter 10 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+8 CHAPTER 10. DIFFERENTIAL ENTROPY
+6. Prove Theorem 10.19.
+Solution:
+Let Y =AX. Then
+fY(y) = 1
+| det(A)|fX(A−1y).
+Letting x =A−1y in (10.50), we have
+h(X) = −
+∫
+SX
+fX(x) logfX(x)dx
+= −
+∫
+SY
+1
+| det(A)|fX(A−1y) logfX(A−1y)dy.
+The rest are the same as in the proof of Theorem 10.15.
+9
+7. For continuous random variablesX andY , discuss whyI(X;X) is not
+equal to h(X).
+Solution:
+ForX be a continuous random variable such thath(X)<∞. Consider
+H( ˆX∆) = −
+∑
+i
+Pr{ ˆX∆ =i} log Pr{ ˆX∆ =i}
+≈
+∑
+i
+f(xi)∆ log(f(xi)∆)
+= −
+∑
+i
+f(xi)∆(logf(xi) + log ∆)
+= −
+∑
+i
+(f(xi) logf(xi))∆− (log ∆)
+∑
+i
+f(xi)∆
+≈ h(X)− (log ∆)
+∫
+f(x)dx
+= h(X)− log ∆.
+Therefore, H( ˆX∆)→∞ as ∆→ 0. Now consider
+I(X;X)≈I( ˆX∆; ˆX∆) =H( ˆX∆)→∞
+as ∆→ 0. This shows that I(X;X) cannot be the same as h(X).
+10 CHAPTER 10. DIFFERENTIAL ENTROPY
+8. Each of the following continuous distributions can be obtained as the
+distribution that maximizes the diﬀerential entropy subject to a suit-
+able set of constraints:
+(a) the exponential distribution,
+f(x) =λe−λx
+for x≥ 0, where λ> 0;
+(b) the Laplace distribution,
+f(x) = 1
+2λe−λ|x|
+for−∞<x< ∞, where λ> 0;
+(c) the gamma distribution,
+f(x) = λ
+Γ(α)(λx)α−1e−λx
+for x≥ 0, where λ,α> 0 and Γ(z) =
+∫∞
+0 tz−1e−tdt;
+(d) the beta distribution,
+f(x) = Γ(p +q)
+Γ(p)Γ(q)xp−1(1−x)q−1
+for 0≤x≤ 1 , where p,q >0;
+(e) the Cauchy distribution,
+f(x) = 1
+π(1 +x2)
+for−∞<x< ∞.
+Identify the corresponding set of constraints for each of these distri-
+butions.
+Solution:
+The solutions are obtained through applications of Corollary 10.42,
+which can be rephrased as follows. Let f∗ be any pdf deﬁned on ℜn
+and suppose for all x∈S f∗
+logf∗(x) =−λ0−
+m∑
+i=1
+λiri(x),
+11
+or
+f∗(x) =elogf(x) =e−λ0−
+∑m
+i=1λiri(x).
+LetS =Sf∗. Then Corollary 10.42 says that f∗(x) maximizes h(f)
+over all pdf f deﬁned onSf∗, subject to the constraints
+Ef[ri(X)] =Ef∗[ri(X)]
+for 1≤i≤m.
+We now give the solution to Part (c), the gamma distribution. For
+x≥ 0, write
+f(x) = λα
+Γ(α)xα−1e−λx.
+Then
+logf(x) = log λα
+Γ(α) + (α− 1) logx−λx.
+By Corollary 10.42,f(x) maximizesh(f) over all pdfg deﬁned onℜ+,
+subject to the constraints
+Eg[logX] =Ef[logX]
+and
+Eg[X] =Ef[X].
+12 CHAPTER 10. DIFFERENTIAL ENTROPY
+9. Let µ be the mean of a continuous random variable X deﬁned onℜ+.
+Obtain an upper bound on h(X) in terms of µ.
+Solution:
+Let Y be exponentially distributed with parameter λ, i.e.,
+f(y) =λe−λy, y ≥ 0.
+Then EY =µ =λ−1. Letting e as the base of the logarithm, we have
+h(Y ) = −
+∫ ∞
+y=0
+f(y) lnf(y)dy
+= −
+∫ ∞
+y=0
+f(y)(lnλ−λy)dy
+= − lnλ +λµ
+= ln µ + 1.
+Then by Theorem 10.41, for any continuous random variableX deﬁned
+onℜ+, we have
+h(X)≤h(Y ) = lnµ + 1.
+For a general base of the logarithm, we have
+h(X)≤ logµ + loge.
+15
+12. Hadamard’s inequality Show that for a positive semideﬁnite matrix
+K,|K|≤ ∏n
+i=1Kii, with equality if and only if K is diagonal. Hint:
+Consider the diﬀerential entropy of a multivariate Gaussian distribu-
+tion.
+Solution:
+Let X∼N (0,K ). Then
+h(X) = 1
+2 log(2πe|K|)
+and
+h(Xi) = 1
+2 log(2πeKii).
+Then substitute the above into the inequality
+h(X)≤
+∑
+i
+h(Xi)
+to obtain the desired result.
+13. Let KX and ˜KX be the covariance matrix and the correlation matrix
+of a random vector X, respectively. Show that |KX|≤| ˜KX|. This
+is a generalization of var X≤ EX 2 for a random variable X. Hint:
+Consider a multivariate Gaussian distribution with another multivari-
+ate Gaussian distribution with zero mean and the same correlation
+matrix.
+Solution:
+Let X∼ N(m,KX) and X′ ∼ N(0, ˜KX). Since X′ is zero mean,
+˜KX′ = KX′ = ˜KX, i.e., X and X′ have the same correlation matrix.
+Then by Theorem 10.45, we have
+1
+2 log(2πe|KX|) =h(X)≤h(X′) = 1
+2 log(2πe|KX′|) = 1
+2 log(2πe| ˜KX|),
+or|KX|≤| ˜KX|."
+      },
+      "elementId": "4:491387c3-85b8-4705-992e-361743182f36:10"
+    }
+  }
+]

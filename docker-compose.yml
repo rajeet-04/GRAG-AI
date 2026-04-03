@@ -39,11 +39,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ollama
+    profiles: ["ollama-local-container"]
     container_name: grag-ollama
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
+      - ${OLLAMA_MODELS_PATH:-${USERPROFILE}\\.ollama}:/root/.ollama
+    environment:
+      - OLLAMA_NUM_GPU=${OLLAMA_NUM_GPU:-99}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-24h}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-3}
     deploy:
       resources:
         reservations:
@@ -61,12 +66,13 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # ── Embedding Model Puller — pulls nomic-embed-text after Ollama starts ───
+  # ── Model Puller — preloads chat + embedding models on GPU ─────────────────
   embedding-init:
     image: ollama/ollama:latest
+    profiles: ["ollama-local-container"]
     container_name: grag-embedding-init
     volumes:
-      - ollama_data:/root/.ollama
+      - ${OLLAMA_MODELS_PATH:-${USERPROFILE}\\.ollama}:/root/.ollama
     depends_on:
       ollama:
         condition: service_healthy
@@ -74,8 +80,8 @@ services:
       - OLLAMA_HOST=http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - "echo 'Pulling embedding model...' && sleep 5 && ollama pull nomic-embed-text && printf '%s\\n' 'FROM nomic-embed-text' 'PARAMETER num_gpu 0' 'PARAMETER num_ctx 2048' > /tmp/EmbeddingModelfile && ollama create nomic-embed-cpu -f /tmp/EmbeddingModelfile && ollama list && echo 'Embedding model ready (CPU-pinned).'"
-    restart: on-failure
+      - "echo 'Verifying GPU models from shared cache...' && sleep 2 && ollama list && ollama show qwen3.5:4b >/dev/null && ollama show qwen3-embedding:0.6b >/dev/null && echo 'GPU models ready from shared cache.'"
+    restart: "no"
 
   # ── GRAG FastAPI Pipeline ─────────────────────────────────────────────────
   fastapi:
@@ -96,17 +102,24 @@ services:
       - NEO4J_USER=${NEO4J_USER:-neo4j}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=grag-qwen
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:4b}
       - OLLAMA_USE_CLOUD=${OLLAMA_USE_CLOUD:-false}
       - OLLAMA_CLOUD_URL=${OLLAMA_CLOUD_URL:-https://api.ollama.com/v1}
       - OLLAMA_CLOUD_MODEL=${OLLAMA_CLOUD_MODEL:-minimax-m2.7:cloud}
       - OLLAMA_CLOUD_API_KEY=${OLLAMA_CLOUD_API_KEY:-}
-      - QUERY_USE_CLOUD=${QUERY_USE_CLOUD:-true}
-      - QUERY_PARALLEL_LLM=${QUERY_PARALLEL_LLM:-true}
-      - QUERY_PARALLEL_TIMEOUT_SEC=${QUERY_PARALLEL_TIMEOUT_SEC:-25}
-      - QUERY_INTENT_MAX_TOKENS=${QUERY_INTENT_MAX_TOKENS:-220}
-      - QUERY_CYPHER_MAX_TOKENS=${QUERY_CYPHER_MAX_TOKENS:-360}
-      - EMBEDDING_MODEL=nomic-embed-cpu
+      - OLLAMA_NUM_GPU=${OLLAMA_NUM_GPU:-99}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-24h}
+      - OLLAMA_REQUEST_TIMEOUT_SEC=${OLLAMA_REQUEST_TIMEOUT_SEC:-120}
+      - QUERY_USE_CLOUD=${QUERY_USE_CLOUD:-false}
+      - QUERY_PARALLEL_LLM=${QUERY_PARALLEL_LLM:-false}
+      - QUERY_PARALLEL_TIMEOUT_SEC=${QUERY_PARALLEL_TIMEOUT_SEC:-10}
+      - QUERY_INTENT_MAX_TOKENS=${QUERY_INTENT_MAX_TOKENS:-200}
+      - QUERY_CYPHER_MAX_TOKENS=${QUERY_CYPHER_MAX_TOKENS:-320}
+      - QUERY_INTENT_TIMEOUT_SEC=${QUERY_INTENT_TIMEOUT_SEC:-8}
+      - QUERY_CYPHER_TIMEOUT_SEC=${QUERY_CYPHER_TIMEOUT_SEC:-12}
+      - QUERY_ENABLE_WARMUP=${QUERY_ENABLE_WARMUP:-true}
+      - QUERY_WARMUP_TIMEOUT_SEC=${QUERY_WARMUP_TIMEOUT_SEC:-20}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-qwen3-embedding:0.6b}
       - CHROMADB_PATH=/data/chromadb
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -115,8 +128,6 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-      embedding-init:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 20s
@@ -154,8 +165,6 @@ services:
       - WEBUI_NAME=GRAG AI
     depends_on:
       fastapi:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"]

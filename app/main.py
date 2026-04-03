@@ -1,5 +1,6 @@
 """GRAG AI - FastAPI Application Entry Point."""
 
+import asyncio
 import structlog
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -40,6 +41,59 @@ class HealthStatus(BaseModel):
     services: Dict[str, Dict[str, str | bool]]
 
 
+async def _warmup_models() -> None:
+    """Warm up local query and embedding models at startup."""
+    if not settings.query_enable_warmup:
+        logger.info("app.warmup.skipped", reason="QUERY_ENABLE_WARMUP=false")
+        return
+
+    warmup_timeout = max(float(settings.query_warmup_timeout_sec), 2.0)
+    warmup_results: Dict[str, bool] = {
+        "chat": False,
+        "embedding": False,
+    }
+
+    try:
+        from app.llm.ollama_client import OllamaClient
+
+        chat_client = OllamaClient(use_cloud=False)
+        response = await asyncio.wait_for(
+            chat_client.chat(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Reply with OK.",
+                    },
+                    {
+                        "role": "user",
+                        "content": "warmup",
+                    },
+                ],
+                temperature=0.0,
+                max_tokens=8,
+                think=False,
+            ),
+            timeout=warmup_timeout,
+        )
+        warmup_results["chat"] = bool(response.get("content", "").strip() or response.get("done"))
+    except Exception as e:
+        logger.warning("app.warmup.chat_failed", error=str(e))
+
+    try:
+        from app.llm.embedding import get_embedding_service
+
+        embedding_service = get_embedding_service()
+        embedding = await asyncio.wait_for(
+            embedding_service.embed_text("warmup"),
+            timeout=warmup_timeout,
+        )
+        warmup_results["embedding"] = len(embedding) > 0
+    except Exception as e:
+        logger.warning("app.warmup.embedding_failed", error=str(e))
+
+    logger.info("app.warmup.complete", results=warmup_results, timeout_sec=warmup_timeout)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup and shutdown."""
@@ -64,6 +118,8 @@ async def lifespan(app: FastAPI):
         logger.info("app.schema.initialized", results=schema_results)
     else:
         logger.warning("app.neo4j.not_connected")
+
+    await _warmup_models()
 
     yield
 

@@ -72,15 +72,19 @@ async def _chat_with_backend(
     temperature: float,
     max_tokens: int,
     think: bool,
+    timeout_sec: float,
 ) -> dict[str, Any]:
     """Execute one chat call and capture timing/health metadata."""
     started = perf_counter()
     try:
-        response = await client.chat(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            think=think,
+        response = await asyncio.wait_for(
+            client.chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                think=think,
+            ),
+            timeout=max(1.0, float(timeout_sec)),
         )
         content = (response.get("content") or "").strip()
         if not content:
@@ -94,6 +98,13 @@ async def _chat_with_backend(
             "backend": backend,
             "ok": True,
             "response": response,
+            "duration_ms": round((perf_counter() - started) * 1000, 1),
+        }
+    except asyncio.TimeoutError:
+        return {
+            "backend": backend,
+            "ok": False,
+            "error": "timeout",
             "duration_ms": round((perf_counter() - started) * 1000, 1),
         }
     except Exception as e:
@@ -113,6 +124,7 @@ async def _query_llm_call(
     temperature: float,
     max_tokens: int,
     think: bool,
+    stage_timeout_sec: float,
 ) -> dict[str, Any]:
     """Route query-stage LLM calls with local/cloud serial or parallel behavior.
 
@@ -141,6 +153,7 @@ async def _query_llm_call(
             temperature=temperature,
             max_tokens=max_tokens,
             think=think,
+            timeout_sec=stage_timeout_sec,
         )
         if not result["ok"]:
             raise RuntimeError(
@@ -158,7 +171,10 @@ async def _query_llm_call(
     # Cloud+Local parallel race mode
     if settings.query_parallel_llm:
         cloud_client = OllamaClient(use_cloud=True)
-        timeout_s = max(float(settings.query_parallel_timeout_sec), 1.0)
+        timeout_s = max(
+            min(float(settings.query_parallel_timeout_sec), float(stage_timeout_sec)),
+            1.0,
+        )
 
         logger.info(
             "query_agent.parallel_race.start",
@@ -177,6 +193,7 @@ async def _query_llm_call(
                     temperature=temperature,
                     max_tokens=max_tokens,
                     think=think,
+                    timeout_sec=stage_timeout_sec,
                 )
             ),
             asyncio.create_task(
@@ -187,6 +204,7 @@ async def _query_llm_call(
                     temperature=temperature,
                     max_tokens=max_tokens,
                     think=think,
+                    timeout_sec=stage_timeout_sec,
                 )
             ),
         }
@@ -247,6 +265,7 @@ async def _query_llm_call(
             temperature=temperature,
             max_tokens=max_tokens,
             think=think,
+            timeout_sec=stage_timeout_sec,
         )
         if local_retry["ok"]:
             logger.info(
@@ -279,6 +298,7 @@ async def _query_llm_call(
         temperature=temperature,
         max_tokens=max_tokens,
         think=think,
+        timeout_sec=stage_timeout_sec,
     )
     if cloud_result["ok"] and cloud_result.get("response", {}).get("content", ""):
         logger.info(
@@ -297,6 +317,7 @@ async def _query_llm_call(
         temperature=temperature,
         max_tokens=max_tokens,
         think=think,
+        timeout_sec=stage_timeout_sec,
     )
     if local_result["ok"]:
         logger.warning(
@@ -498,6 +519,8 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
         ),
         query_use_cloud=settings.query_use_cloud,
         query_parallel_llm=settings.query_parallel_llm,
+        intent_timeout_sec=settings.query_intent_timeout_sec,
+        cypher_timeout_sec=settings.query_cypher_timeout_sec,
     )
 
     try:
@@ -520,6 +543,7 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
             temperature=0.1,
             max_tokens=settings.query_intent_max_tokens,
             think=False,  # JSON output — disable thinking trace
+            stage_timeout_sec=settings.query_intent_timeout_sec,
         )
 
         intent_content = intent_response.get("content", "")
@@ -568,6 +592,7 @@ async def query_agent_node(state: dict[str, Any]) -> dict[str, Any]:
             temperature=0.1,
             max_tokens=settings.query_cypher_max_tokens,
             think=False,  # Cypher output — disable thinking trace
+            stage_timeout_sec=settings.query_cypher_timeout_sec,
         )
 
         cypher_content = cypher_response.get("content", "").strip()
